@@ -54,6 +54,7 @@ let ws = null;
 let lastState = null;
 let listDirty = false;
 let verifyPid = null;
+let activeTab = "game";
 
 // =====================================================================
 // Password
@@ -191,6 +192,7 @@ else showScreen("screen-login");
 // =====================================================================
 function startGame() {
   showScreen("screen-game");
+  setTab("game");
   $("#me-label").textContent = myName;
   connect();
 }
@@ -265,13 +267,65 @@ function render(state) {
   else grid.innerHTML = "<p class='muted'>Joining…</p>";
 
   renderPlayers(state);
-  renderOdds(state);
   renderWinners(state);
+  if (activeTab === "stats") renderStats(state);
   if (verifyPid) renderVerify();
   if (!$("#settings").hidden) fillListEditor(state.items);
 }
 
-// ---------- live odds ----------
+// ---------- tabs ----------
+$("#tab-game").addEventListener("click", () => setTab("game"));
+$("#tab-stats").addEventListener("click", () => setTab("stats"));
+function setTab(tab) {
+  activeTab = tab;
+  $("#tab-game-content").hidden = tab !== "game";
+  $("#stats-view").hidden = tab !== "stats";
+  $("#tab-game").classList.toggle("active", tab === "game");
+  $("#tab-stats").classList.toggle("active", tab === "stats");
+  if (tab === "stats" && lastState) renderStats(lastState);
+}
+
+// ---------- stats table: item x person mark counts ----------
+function renderStats(state) {
+  const stats = state.stats || {};
+  const names = state.statNames || {};
+  const box = $("#stats-table");
+  const items = Object.keys(stats);
+  if (!items.length) {
+    box.innerHTML = "<p class='wempty'>No marks recorded yet. Stats build up as people mark squares.</p>";
+    $("#stats-count").textContent = "";
+    return;
+  }
+  // Columns = everyone who has marked anything, sorted by their total.
+  const playerTotals = {};
+  for (const item of items) for (const [k, n] of Object.entries(stats[item])) playerTotals[k] = (playerTotals[k] || 0) + n;
+  const playerKeys = Object.keys(playerTotals).sort((a, b) => playerTotals[b] - playerTotals[a]);
+  // Rows = items, sorted by how often they've come up overall.
+  const itemTotal = {};
+  for (const item of items) itemTotal[item] = Object.values(stats[item]).reduce((s, n) => s + n, 0);
+  items.sort((a, b) => itemTotal[b] - itemTotal[a]);
+
+  $("#stats-count").textContent = `${items.length} items · ${playerKeys.length} people`;
+
+  let h = "<div class='stats-table-wrap'><table class='stats'><thead><tr><th>Item</th>";
+  for (const k of playerKeys) h += `<th>${escapeHtml(names[k] || k)}</th>`;
+  h += "<th>Total</th></tr></thead><tbody>";
+  for (const item of items) {
+    h += `<tr><td class="item">${escapeHtml(item)}</td>`;
+    for (const k of playerKeys) {
+      const n = stats[item][k] || 0;
+      h += `<td class="${n ? "" : "zero"}">${n || "·"}</td>`;
+    }
+    h += `<td class="tot">${itemTotal[item]}</td></tr>`;
+  }
+  let grand = 0;
+  h += "</tbody><tfoot><tr><td class='item'>Total</td>";
+  for (const k of playerKeys) { h += `<td>${playerTotals[k]}</td>`; grand += playerTotals[k]; }
+  h += `<td>${grand}</td></tr></tfoot></table></div>`;
+  box.innerHTML = h;
+}
+
+// ---------- live odds (shown inline in the players list) ----------
 // The 12 winning lines (rows, columns, diagonals).
 const ODDS_LINES = (() => {
   const lines = [];
@@ -303,34 +357,17 @@ function computeOdds(state) {
   return scored;
 }
 
-function renderOdds(state) {
-  const box = $("#odds");
-  const scored = computeOdds(state);
-  if (!scored.length) { box.innerHTML = "<p class='wempty'>No players yet.</p>"; return; }
-  box.innerHTML = "";
-  for (const x of scored) {
-    const pct = Math.round(x.pct * 100);
-    const sub = x.best === 0 ? "has bingo" : `${x.best} square${x.best === 1 ? "" : "s"} from a line`;
-    const row = document.createElement("div");
-    row.className = "odds-row";
-    row.innerHTML =
-      `<div class="odds-top"><span class="odds-name"><span class="swatch" style="background:${x.p.color}"></span>${escapeHtml(x.p.name)}</span><span class="odds-pct">${pct}%</span></div>` +
-      `<div class="odds-bar"><i style="width:${Math.max(2, pct)}%"></i></div>` +
-      `<div class="odds-sub">${sub}</div>`;
-    row.addEventListener("click", () => openVerify(x.key));
-    box.appendChild(row);
-  }
-}
-
 function renderPlayers(state) {
   const online = new Set(state.online || []);
   const winnerName = winnerFor(state, state.season);
+  const odds = {};
+  for (const x of computeOdds(state)) odds[x.key] = Math.round(x.pct * 100);
   const entries = Object.entries(state.players);
   $("#player-count").textContent = entries.length ? `${entries.length} in` : "";
   entries.sort((a, b) => {
     const oa = online.has(a[0]) ? 0 : 1, ob = online.has(b[0]) ? 0 : 1;
     if (oa !== ob) return oa - ob;
-    return countMarks(b[1].marks) - countMarks(a[1].marks);
+    return (odds[b[0]] || 0) - (odds[a[0]] || 0);
   });
   const box = $("#players"); box.innerHTML = "";
   for (const [pid, p] of entries) {
@@ -344,7 +381,8 @@ function renderPlayers(state) {
       (isMe ? '<span class="tag">you</span>' : "") +
       (p.bingo ? '<span class="winflag">bingo</span>' : "") +
       (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
-      `</div><div class="pmeta">${countMarks(p.marks) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
+      `<span class="podds" title="Estimated odds to win">${odds[pid] ?? 0}%</span></div>` +
+      `<div class="pmeta">${countMarks(p.marks) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
 
     const mini = document.createElement("div"); mini.className = "mini";
     for (let i = 0; i < 25; i++) { const c = document.createElement("i"); if (p.marks[i]) c.style.background = i === 12 ? "#c9c3b6" : p.color; mini.appendChild(c); }

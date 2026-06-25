@@ -163,6 +163,10 @@ export class BingoRoom {
       this.winners = (await this.ctx.storage.get("winners")) || [];
       // votes: { candidateKey: [approverKey, ...] } for the current game.
       this.votes = (await this.ctx.storage.get("votes")) || {};
+      // stats: how often each person has marked each item, across all games.
+      // { itemText: { playerKey: count } } plus a key->display-name map.
+      this.stats = (await this.ctx.storage.get("stats")) || {};
+      this.statNames = (await this.ctx.storage.get("statNames")) || {};
     });
   }
 
@@ -221,6 +225,7 @@ export class BingoRoom {
         const wasBingo = player.bingo;
         player.bingo = hasBingo(player.marks);
         await this.persistPlayers();
+        await this.recordStat(player.card[i], pid, player.name, player.marks[i] ? 1 : -1);
         this.broadcast(player.bingo && !wasBingo ? { bingoBy: pid } : null);
         return;
       }
@@ -399,6 +404,21 @@ export class BingoRoom {
     await this.ctx.storage.put("players", this.players);
   }
 
+  // Adjust the lifetime count of how often `playerKey` has marked `item`.
+  // delta is +1 (marked) or -1 (un-marked, e.g. a misclick correction).
+  async recordStat(item, playerKey, name, delta) {
+    const text = String(item || "").trim();
+    if (!text || text === "FREE" || text === "—" || text === "(add more items)") return;
+    if (!this.stats[text]) this.stats[text] = {};
+    const next = Math.max(0, (this.stats[text][playerKey] || 0) + delta);
+    if (next === 0) delete this.stats[text][playerKey];
+    else this.stats[text][playerKey] = next;
+    if (Object.keys(this.stats[text]).length === 0) delete this.stats[text];
+    this.statNames[playerKey] = name;
+    await this.ctx.storage.put("stats", this.stats);
+    await this.ctx.storage.put("statNames", this.statNames);
+  }
+
   broadcast(extra) {
     const sockets = this.ctx.getWebSockets();
     const online = new Set(
@@ -414,6 +434,8 @@ export class BingoRoom {
       season: this.season,
       winners: this.winners,
       votes: this.votes,
+      stats: this.stats,
+      statNames: this.statNames,
       ...(extra || {}),
     });
     for (const ws of sockets) {

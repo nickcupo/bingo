@@ -57,6 +57,10 @@
           <span class="brand">Meeting Bingo</span>
           <span id="season-label" class="season"></span>
         </div>
+        <nav class="tabs">
+          <button id="tab-game" class="tab active">Game</button>
+          <button id="tab-stats" class="tab">Stats</button>
+        </nav>
         <div class="topbar-right">
           <span id="conn" class="conn"><i></i><span>connecting</span></span>
           <span id="me-label" class="me"></span>
@@ -64,6 +68,7 @@
         </div>
       </header>
 
+      <div id="tab-game-content">
       <div id="announce" class="announce" hidden></div>
 
       <main class="layout">
@@ -84,13 +89,7 @@
           <section class="panel">
             <div class="head"><h2>Players</h2><span id="player-count" class="count"></span></div>
             <div id="players" class="players"></div>
-            <p class="hint">Select a player to view their card and verify a win.</p>
-          </section>
-
-          <section class="panel">
-            <div class="head"><h2>Live odds</h2><span class="count">to win</span></div>
-            <div id="odds"></div>
-            <p class="hint">Estimated live from each card's progress — just for fun, not a real wager.</p>
+            <p class="hint">The % is each player's estimated odds to win (from card progress). Select a player to view their card and verify a win.</p>
           </section>
 
           <section class="panel">
@@ -118,6 +117,15 @@
           </section>
         </aside>
       </main>
+      </div><!-- /tab-game-content -->
+
+      <section id="stats-view" class="stats-view" hidden>
+        <div class="panel">
+          <div class="head"><h2>Item statistics</h2><span id="stats-count" class="count"></span></div>
+          <p class="hint">How many times each person has marked each item, across all games. This data will power smarter, per-person odds later.</p>
+          <div id="stats-table"></div>
+        </div>
+      </section>
     </section>
 
     <!-- Verify modal -->

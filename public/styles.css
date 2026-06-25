@@ -108,13 +108,13 @@ button { cursor: pointer; }
 /* ---------- top bar ---------- */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; padding: .85rem 1.5rem;
+  gap: .8rem 1.2rem; flex-wrap: wrap; padding: .8rem 1.5rem;
   background: var(--surface); border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 5;
 }
-.topbar-left { display: flex; align-items: baseline; gap: .8rem; min-width: 0; }
-.brand { font-family: var(--serif); font-size: 1.2rem; font-weight: 600; }
-.season { font-size: .85rem; color: var(--muted); }
+.topbar-left { display: flex; align-items: baseline; gap: .7rem; min-width: 0; }
+.brand { font-family: var(--serif); font-size: 1.2rem; font-weight: 600; white-space: nowrap; }
+.season { font-size: .85rem; color: var(--muted); white-space: nowrap; }
 .topbar-right { display: flex; align-items: center; gap: 1rem; }
 .me { font-size: .85rem; }
 .conn { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--muted); }
@@ -201,17 +201,45 @@ button { cursor: pointer; }
 .wlist li { display: flex; justify-content: space-between; gap: .5rem; padding: .4rem 0; border-top: 1px solid var(--line); font-size: .9rem; }
 .wlist .w-season { color: var(--muted); }
 
-/* live odds */
-.odds-row { padding: .55rem 0; border-top: 1px solid var(--line); cursor: pointer; }
-.odds-row:first-child { border-top: none; }
-.odds-row:hover .odds-name { text-decoration: underline; text-underline-offset: 3px; }
-.odds-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
-.odds-name { font-weight: 500; display: flex; align-items: center; gap: .4rem; min-width: 0; }
-.odds-name .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-.odds-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
-.odds-bar { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: .35rem; }
-.odds-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s ease; }
-.odds-sub { font-size: .74rem; color: var(--muted); margin-top: .25rem; }
+/* inline win odds in the players list */
+.podds {
+  margin-left: auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: .85rem;
+  white-space: nowrap;
+  padding-left: .5rem;
+  color: var(--accent);
+}
+
+/* tabs */
+.tabs { display: flex; gap: .2rem; }
+.tab {
+  background: none; border: none; padding: .3rem .2rem; margin: 0 .35rem;
+  font-size: .92rem; color: var(--muted); border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+
+/* stats tab */
+.stats-view { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
+.stats-table-wrap { overflow-x: auto; }
+table.stats { border-collapse: collapse; width: 100%; font-size: .85rem; }
+.stats th, .stats td {
+  padding: .45rem .7rem; border-bottom: 1px solid var(--line);
+  text-align: right; white-space: nowrap;
+}
+.stats thead th { font-weight: 600; border-bottom: 2px solid var(--line-strong); }
+.stats th.item, .stats td.item { text-align: left; }
+.stats td.item { font-weight: 500; white-space: normal; max-width: 280px; }
+.stats thead th:first-child, .stats td.item, .stats tfoot td.item {
+  position: sticky; left: 0; background: var(--surface);
+}
+.stats td.zero { color: var(--line-strong); }
+.stats td.tot, .stats th:last-child { font-weight: 700; }
+.stats tfoot td { font-weight: 700; border-top: 2px solid var(--line-strong); border-bottom: none; }
+
+@media (max-width: 880px) { .stats-view { padding: 1rem; } }
 .wempty { color: var(--muted); font-size: .85rem; }
 
 /* settings */
