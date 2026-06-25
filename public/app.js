@@ -3,6 +3,14 @@
 // ---------- helpers ----------
 const $ = (sel) => document.querySelector(sel);
 
+// Set innerHTML only when it actually changed, so unchanged panels don't repaint
+// (avoids flicker/reflow on every state broadcast).
+function setHTML(el, html) {
+  if (el.__html === html) return;
+  el.__html = html;
+  el.innerHTML = html;
+}
+
 // Storage that never throws (Safari Private Browsing can block localStorage).
 const mem = {};
 const store = {
@@ -186,13 +194,37 @@ $("#name-form").addEventListener("submit", (e) => {
 });
 $("#btn-edit-name").addEventListener("click", () => {
   $("#name-input").value = myName; $("#stamp-custom").value = "";
-  buildStampPicker(); showScreen("screen-name");
+  buildStampPicker(); showScreen("screen-name"); loadRoster();
 });
+
+// Fetch the current player names so returning players can tap their exact name
+// (same name each season keeps their card, stats, and wins linked).
+function loadRoster() {
+  const field = $("#roster-field"), box = $("#name-roster");
+  field.hidden = true; box.innerHTML = "";
+  if (!token) return;
+  fetch("/api/roster?token=" + encodeURIComponent(token))
+    .then((r) => (r.ok ? r.json() : { names: [] }))
+    .then((d) => {
+      const names = (d.names || []).filter(Boolean);
+      if (!names.length) return;
+      for (const n of names) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "roster-chip";
+        b.textContent = n;
+        b.addEventListener("click", () => { $("#name-input").value = n; $("#name-input").focus(); });
+        box.appendChild(b);
+      }
+      field.hidden = false;
+    })
+    .catch(() => {});
+}
 
 // ---------- routing on load ----------
 function gotoNameOrGame() {
   if (myName) startGame();
-  else { buildStampPicker(); $("#name-input").value = myName; showScreen("screen-name"); }
+  else { buildStampPicker(); $("#name-input").value = myName; showScreen("screen-name"); loadRoster(); }
 }
 if (token) gotoNameOrGame();
 else showScreen("screen-login");
@@ -425,7 +457,7 @@ function renderStats(state) {
   const box = $("#stats-table");
   const items = Object.keys(stats);
   if (!items.length) {
-    box.innerHTML = "<p class='wempty'>No marks recorded yet. Stats build up as people mark squares.</p>";
+    setHTML(box, "<p class='wempty'>No marks recorded yet. Stats build up as people mark squares.</p>");
     $("#stats-count").textContent = "";
     return;
   }
@@ -455,7 +487,7 @@ function renderStats(state) {
   h += "</tbody><tfoot><tr><td class='item'>Total</td>";
   for (const k of playerKeys) { h += `<td>${playerTotals[k]}</td>`; grand += playerTotals[k]; }
   h += `<td class='tot'>${grand}</td></tr></tfoot></table></div>`;
-  box.innerHTML = h;
+  setHTML(box, h);
 }
 
 // ---------- live odds (shown inline in the players list) ----------
@@ -512,13 +544,13 @@ function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew) {
     left.className = "pleft";
     row.insertBefore(left, row.firstChild);
   }
-  left.innerHTML =
+  setHTML(left,
     `<div class="pname"><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.name)}` +
     (isMe ? '<span class="tag">you</span>' : "") +
     (bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
     (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
     `<span class="podds" title="Estimated odds to win">${pct}%</span></div>` +
-    `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
+    `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`);
 
   let mini = row.querySelector(".mini");
   if (!mini) {
@@ -557,17 +589,26 @@ function renderPlayers(state) {
     return;
   }
 
+  const ph = box.querySelector(".wempty");
+  if (ph) ph.remove();
   const existing = new Map([...box.querySelectorAll(".player")].map((r) => [r.dataset.pid, r]));
-  const frag = document.createDocumentFragment();
+  const desired = [];
   for (const [pid, p] of entries) {
     let row = existing.get(pid);
     const isNew = !knownPlayers.has(pid);
     if (!row) row = document.createElement("div");
     updatePlayerRow(row, pid, p, info[pid] || { pct: 0, bingos: 0, marked: 1 }, online.has(pid), pid === myKey(), winnerName, isNew);
     if (isNew) knownPlayers.add(pid);
-    frag.appendChild(row);
+    desired.push(row);
   }
-  box.replaceChildren(frag);
+  // Remove rows for players who left.
+  for (const [pid, row] of existing) {
+    if (!state.players[pid]) { row.remove(); knownPlayers.delete(pid); }
+  }
+  // Reorder by moving only the rows that are out of position (no full rebuild).
+  desired.forEach((row, i) => {
+    if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
+  });
 }
 
 function winnerFor(state, season) {
@@ -593,7 +634,7 @@ function renderWinners(state) {
   } else {
     html += "<p class='wempty'>No past winners recorded yet.</p>";
   }
-  box.innerHTML = html;
+  setHTML(box, html);
 }
 
 // =====================================================================
@@ -677,7 +718,7 @@ function renderVerify() {
     rm.addEventListener("click", () => {
       if (!confirm("Leave the game? Your card and marks will be deleted.")) return;
       send({ type: "removePlayer", playerId: verifyPid }); closeVerify();
-      myName = ""; store.del("name"); buildStampPicker(); $("#name-input").value = ""; showScreen("screen-name");
+      myName = ""; store.del("name"); buildStampPicker(); $("#name-input").value = ""; showScreen("screen-name"); loadRoster();
     });
     actions.appendChild(rm);
   } else if (ADMINS.has(me)) {

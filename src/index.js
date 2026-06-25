@@ -46,8 +46,8 @@ export default {
       return json({ ok: false, error: "wrong password" }, 401);
     }
 
-    // --- WebSocket: real-time game, gated by token ---
-    if (url.pathname === "/ws") {
+    // --- WebSocket (real-time game) and roster (returning-player names) ---
+    if (url.pathname === "/ws" || url.pathname === "/api/roster") {
       const token = url.searchParams.get("token") || "";
       const expected = await makeToken(env);
       if (!timingSafeEqual(token, expected)) {

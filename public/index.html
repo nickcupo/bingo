@@ -26,9 +26,14 @@
       <div class="box">
         <h1 class="wordmark">Who's playing?</h1>
         <form id="name-form" class="stack">
+          <div id="roster-field" class="field" hidden>
+            <span>Returning? Tap your name</span>
+            <div id="name-roster" class="name-roster"></div>
+          </div>
           <label class="field">
             <span>Your name</span>
-            <input id="name-input" type="text" maxlength="40" required />
+            <input id="name-input" type="text" maxlength="40" autocomplete="off" required />
+            <p class="hint">Use the same name each season so your card, stats, and wins stay linked.</p>
           </label>
           <div class="field">
             <span>Your stamp</span>

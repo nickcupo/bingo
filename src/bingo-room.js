@@ -245,6 +245,14 @@ export class BingoRoom {
   }
 
   async fetch(request) {
+    // Roster: the list of current player names, for the returning-player picker.
+    if (new URL(request.url).pathname === "/api/roster") {
+      const names = [...new Set(Object.values(this.players).map((p) => p.name))]
+        .sort((a, b) => a.localeCompare(b));
+      return new Response(JSON.stringify({ names }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("expected websocket", { status: 426 });
     }

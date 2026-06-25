@@ -121,6 +121,13 @@ button { cursor: pointer; }
 .field { display: flex; flex-direction: column; gap: .4rem; }
 .field > span { font-size: .8rem; color: var(--muted); }
 
+.name-roster { display: flex; flex-wrap: wrap; gap: .4rem; }
+.roster-chip {
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 999px; padding: .35rem .7rem; font-size: .85rem; cursor: pointer;
+}
+.roster-chip:hover { border-color: var(--ink); }
+
 .stamp-picker { display: flex; flex-wrap: wrap; gap: .4rem; }
 .stamp-picker button {
   width: 42px; height: 42px; border-radius: 7px;
