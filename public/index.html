@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quarterly Planning Bingo</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='6'%20fill='%231c1c1a'/%3E%3Ctext%20x='16'%20y='22'%20font-size='18'%20font-family='Georgia,serif'%20fill='%23f6f4ef'%20text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <!-- 1. Password -->
+    <section id="screen-login" class="screen center">
+      <div class="box">
+        <h1 class="wordmark">Quarterly Planning Bingo</h1>
+        <p class="lede">Enter the shared password to join.</p>
+        <form id="login-form" class="stack">
+          <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" class="btn">Enter</button>
+          <p id="login-error" class="error" hidden></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- 2. Name + stamp -->
+    <section id="screen-name" class="screen center" hidden>
+      <div class="box">
+        <h1 class="wordmark">Who's playing?</h1>
+        <form id="name-form" class="stack">
+          <label class="field">
+            <span>Your name</span>
+            <input id="name-input" type="text" maxlength="40" required />
+          </label>
+          <div class="field">
+            <span>Your stamp</span>
+            <div id="stamp-picker" class="stamp-picker"></div>
+            <input id="stamp-custom" type="text" placeholder="or type a character / emoji" maxlength="8" />
+            <div class="stamp-img-row">
+              <label class="file-btn">Use an image
+                <input id="stamp-file" type="file" accept="image/*" hidden />
+              </label>
+              <div id="stamp-img-preview" class="stamp-img-preview" hidden>
+                <img id="stamp-img-thumb" alt="stamp preview" />
+                <button type="button" id="stamp-img-clear" class="link">remove</button>
+              </div>
+            </div>
+            <p class="hint">Stamps appear faded over each square so the text stays readable.</p>
+          </div>
+          <button type="submit" class="btn">Continue</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 3. Game -->
+    <section id="screen-game" class="screen" hidden>
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="brand">Meeting Bingo</span>
+          <span id="season-label" class="season"></span>
+        </div>
+        <div class="topbar-right">
+          <span id="conn" class="conn"><i></i><span>connecting</span></span>
+          <span id="me-label" class="me"></span>
+          <button id="btn-edit-name" class="link">Edit</button>
+        </div>
+      </header>
+
+      <div id="announce" class="announce" hidden></div>
+
+      <main class="layout">
+        <section class="card-col">
+          <div class="head">
+            <h2>Your card</h2>
+            <div class="head-actions">
+              <button id="btn-clear" class="link">Clear marks</button>
+              <button id="btn-import-card" class="link">Enter my card</button>
+              <button id="btn-new-card" class="link">New card</button>
+            </div>
+          </div>
+          <div id="my-bingo" class="note note-win" hidden>You have bingo. Ask the group to verify your card.</div>
+          <div id="card" class="grid"></div>
+        </section>
+
+        <aside class="side">
+          <section class="panel">
+            <div class="head"><h2>Players</h2><span id="player-count" class="count"></span></div>
+            <div id="players" class="players"></div>
+            <p class="hint">Select a player to view their card and verify a win.</p>
+          </section>
+
+          <section class="panel">
+            <div class="head">
+              <h2>Winners</h2>
+              <button id="btn-new-game" class="link">Start new game</button>
+            </div>
+            <div id="winners"></div>
+          </section>
+
+          <section class="panel">
+            <button id="settings-toggle" class="disclosure" aria-expanded="false">Game settings</button>
+            <div id="settings" class="settings" hidden>
+              <h3>Bingo list</h3>
+              <p class="hint">Anyone can edit. One item per line.</p>
+              <textarea id="list-text" rows="9" spellcheck="false"></textarea>
+              <div class="btn-row">
+                <button id="btn-save-list" class="btn btn-sm">Save list</button>
+                <button id="btn-reset-list" class="btn-outline btn-sm">Reset to default</button>
+              </div>
+              <hr />
+              <button id="btn-reshuffle" class="btn-outline btn-sm">Re-deal everyone's cards</button>
+              <p class="hint">Deals fresh cards to everyone without changing the season.</p>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </section>
+
+    <!-- Verify modal -->
+    <div id="verify-modal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-head">
+          <h2 id="verify-title">Card</h2>
+          <button id="verify-close" class="link">Close</button>
+        </div>
+        <p id="verify-status" class="verify-status"></p>
+        <div id="verify-card" class="grid verify-grid"></div>
+        <div id="verify-actions" class="verify-actions"></div>
+      </div>
+    </div>
+
+    <!-- Import / enter your own card -->
+    <div id="import-modal" class="modal" hidden>
+      <div class="modal-box">
+        <div class="modal-head">
+          <h2>Enter your card</h2>
+          <button id="import-close" class="link">Cancel</button>
+        </div>
+        <p class="hint">Type the squares from your existing card — 5 across, 5 down, left to right. The centre is a free space. This replaces your card for the current game.</p>
+        <div class="import-paste">
+          <textarea id="import-paste-text" rows="2" placeholder="Shortcut: paste your 24 squares here, one per line, then press Fill grid."></textarea>
+          <button id="import-fill" class="btn-outline btn-sm">Fill grid</button>
+        </div>
+        <div id="import-grid" class="grid import-grid"></div>
+        <div class="btn-row">
+          <button id="import-save" class="btn btn-sm">Save my card</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- New game modal -->
+    <div id="newgame-modal" class="modal" hidden>
+      <div class="modal-box modal-narrow">
+        <div class="modal-head">
+          <h2>Start a new game</h2>
+          <button id="newgame-close" class="link">Cancel</button>
+        </div>
+        <p class="hint">This deals fresh cards to everyone and clears all marks.</p>
+        <div class="field">
+          <span>Quarter</span>
+          <select id="newgame-term">
+            <option>Spring</option><option>Summer</option><option>Fall</option><option>Winter</option>
+          </select>
+        </div>
+        <label class="field"><span>Year</span><input id="newgame-year" type="number" min="2000" max="3000" /></label>
+        <button id="newgame-confirm" class="btn">Start game</button>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

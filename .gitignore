@@ -1,0 +1,14 @@
+# Dependencies (reinstalled with `npm install`)
+node_modules/
+
+# Local dev secrets — never commit (use `wrangler secret put` for prod)
+.dev.vars
+.dev.vars.*
+
+# Wrangler local state / build output
+.wrangler/
+dist/
+
+# OS / editor cruft
+.DS_Store
+*.log
