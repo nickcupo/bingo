@@ -62,6 +62,11 @@ function cleanSeason(s) {
   return { term: s.term, year };
 }
 
+// Only these names (normalized) may remove other players.
+const ADMINS = new Set(["nick", "lauryn"]);
+// Approvals required before a winner is officially declared.
+const APPROVALS_NEEDED = 2;
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -156,6 +161,8 @@ export class BingoRoom {
       }
       this.season = (await this.ctx.storage.get("season")) || currentSeason();
       this.winners = (await this.ctx.storage.get("winners")) || [];
+      // votes: { candidateKey: [approverKey, ...] } for the current game.
+      this.votes = (await this.ctx.storage.get("votes")) || {};
     });
   }
 
@@ -300,8 +307,12 @@ export class BingoRoom {
 
       case "removePlayer": {
         const target = String(msg.playerId || "");
+        if (!target) return;
+        // You may always remove yourself; only admins may remove others.
+        if (target !== pid && !ADMINS.has(pid)) return;
         if (this.players[target]) {
           delete this.players[target];
+          if (this.votes[target]) { delete this.votes[target]; await this.ctx.storage.put("votes", this.votes); }
           await this.persistPlayers();
         }
         return this.broadcast();
@@ -312,29 +323,52 @@ export class BingoRoom {
         const season = cleanSeason(msg.season);
         if (!season) return;
         this.season = season;
+        this.votes = {};
         for (const p of Object.values(this.players)) {
           p.card = makeCard(this.items);
           p.marks = freshMarks();
           p.bingo = false;
         }
         await this.ctx.storage.put("season", this.season);
+        await this.ctx.storage.put("votes", this.votes);
         await this.persistPlayers();
         return this.broadcast();
       }
 
-      // Record (or replace) the winner for the current season.
-      case "recordWinner": {
-        const player = this.players[String(msg.playerId || "")];
-        if (!player) return;
+      // Approve a player as the season's winner. Two distinct approvals (not
+      // counting the player themselves) officially declare them the winner.
+      case "approveWinner": {
+        const targetKey = String(msg.playerId || "");
+        const candidate = this.players[targetKey];
+        if (!candidate || !candidate.bingo) return;
+        if (!pid || pid === targetKey) return; // need an approver who isn't the candidate
         const { term, year } = this.season;
-        const entry = { term, year, name: player.name, at: Date.now() };
-        const i = this.winners.findIndex((w) => w.term === term && w.year === year);
-        if (i >= 0) this.winners[i] = entry;
-        else this.winners.push(entry);
-        await this.ctx.storage.put("winners", this.winners);
+        // Voting is closed once a winner is declared this season.
+        if (this.winners.some((w) => w.term === term && w.year === year)) return;
+        const list = this.votes[targetKey] || [];
+        if (!list.includes(pid)) list.push(pid);
+        this.votes[targetKey] = list;
+        let declared = false;
+        if (list.length >= APPROVALS_NEEDED) {
+          const entry = { term, year, name: candidate.name, at: Date.now() };
+          const i = this.winners.findIndex((w) => w.term === term && w.year === year);
+          if (i >= 0) this.winners[i] = entry; else this.winners.push(entry);
+          await this.ctx.storage.put("winners", this.winners);
+          declared = true;
+        }
+        await this.ctx.storage.put("votes", this.votes);
+        return this.broadcast(declared ? { winnerDeclared: targetKey } : null);
+      }
+
+      case "unapproveWinner": {
+        const targetKey = String(msg.playerId || "");
+        if (!pid || !Array.isArray(this.votes[targetKey])) return;
+        this.votes[targetKey] = this.votes[targetKey].filter((k) => k !== pid);
+        await this.ctx.storage.put("votes", this.votes);
         return this.broadcast();
       }
 
+      // Remove a declared winner and reopen voting for that season.
       case "clearWinner": {
         const season = cleanSeason(msg.season);
         if (!season) return;
@@ -342,6 +376,10 @@ export class BingoRoom {
           (w) => !(w.term === season.term && w.year === season.year),
         );
         await this.ctx.storage.put("winners", this.winners);
+        if (season.term === this.season.term && season.year === this.season.year) {
+          this.votes = {};
+          await this.ctx.storage.put("votes", this.votes);
+        }
         return this.broadcast();
       }
     }
@@ -375,6 +413,7 @@ export class BingoRoom {
       online: [...online],
       season: this.season,
       winners: this.winners,
+      votes: this.votes,
       ...(extra || {}),
     });
     for (const ws of sockets) {

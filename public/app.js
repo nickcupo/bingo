@@ -40,6 +40,8 @@ const STAMPS = ["✓", "●", "★", "◆", "▲", "✕"];
 // Identity is your name (normalized), so the same name gets the same card on
 // any device. Must match the server's normalization: trim + lowercase.
 function myKey() { return myName.trim().toLowerCase(); }
+// Only these names may remove other players.
+const ADMINS = new Set(["nick", "lauryn"]);
 let token = store.get("token");
 const DEFAULT_STAMP_IMG = "/stamps/horton.png";
 let myName = store.get("name") || "";
@@ -263,9 +265,61 @@ function render(state) {
   else grid.innerHTML = "<p class='muted'>Joining…</p>";
 
   renderPlayers(state);
+  renderOdds(state);
   renderWinners(state);
   if (verifyPid) renderVerify();
   if (!$("#settings").hidden) fillListEditor(state.items);
+}
+
+// ---------- live odds ----------
+// The 12 winning lines (rows, columns, diagonals).
+const ODDS_LINES = (() => {
+  const lines = [];
+  for (let r = 0; r < 5; r++) lines.push([0, 1, 2, 3, 4].map((c) => r * 5 + c));
+  for (let c = 0; c < 5; c++) lines.push([0, 1, 2, 3, 4].map((r) => r * 5 + c));
+  lines.push([0, 6, 12, 18, 24]);
+  lines.push([4, 8, 12, 16, 20]);
+  return lines;
+})();
+
+// Implied win odds from board state: a line needing fewer squares is weighted
+// exponentially higher, and having several near-complete lines adds up. Scores
+// are normalized across players so they read like market prices.
+function computeOdds(state) {
+  const scored = Object.entries(state.players).map(([key, p]) => {
+    let best = 5, score = 0;
+    for (const line of ODDS_LINES) {
+      let marked = 0;
+      for (const i of line) if (p.marks[i]) marked++;
+      const remaining = 5 - marked;
+      if (remaining < best) best = remaining;
+      score += Math.pow(4, -remaining);
+    }
+    return { key, p, best, score };
+  });
+  const total = scored.reduce((s, x) => s + x.score, 0) || 1;
+  for (const x of scored) x.pct = x.score / total;
+  scored.sort((a, b) => b.pct - a.pct);
+  return scored;
+}
+
+function renderOdds(state) {
+  const box = $("#odds");
+  const scored = computeOdds(state);
+  if (!scored.length) { box.innerHTML = "<p class='wempty'>No players yet.</p>"; return; }
+  box.innerHTML = "";
+  for (const x of scored) {
+    const pct = Math.round(x.pct * 100);
+    const sub = x.best === 0 ? "has bingo" : `${x.best} square${x.best === 1 ? "" : "s"} from a line`;
+    const row = document.createElement("div");
+    row.className = "odds-row";
+    row.innerHTML =
+      `<div class="odds-top"><span class="odds-name"><span class="swatch" style="background:${x.p.color}"></span>${escapeHtml(x.p.name)}</span><span class="odds-pct">${pct}%</span></div>` +
+      `<div class="odds-bar"><i style="width:${Math.max(2, pct)}%"></i></div>` +
+      `<div class="odds-sub">${sub}</div>`;
+    row.addEventListener("click", () => openVerify(x.key));
+    box.appendChild(row);
+  }
 }
 
 function renderPlayers(state) {
@@ -346,38 +400,63 @@ function renderVerify() {
   buildCardInto($("#verify-card"), p, false);
 
   const actions = $("#verify-actions"); actions.innerHTML = "";
-  const isWinner = p.name === winnerFor(lastState, season);
-  if (isWinner) {
-    const tag = document.createElement("span"); tag.className = "verify-status ok"; tag.style.margin = "0";
-    tag.textContent = `Recorded as ${seasonText(season)} winner.`;
-    const undo = document.createElement("button"); undo.className = "btn-outline btn-sm"; undo.textContent = "Remove win";
-    undo.addEventListener("click", () => { send({ type: "clearWinner", season }); });
-    actions.appendChild(tag); actions.appendChild(undo);
+  const me = myKey();
+  const isSelf = verifyPid === me;
+  const declaredWinner = winnerFor(lastState, season);
+  const votes = (lastState.votes && lastState.votes[verifyPid]) || [];
+  const approverNames = votes.map((k) => (lastState.players[k] && lastState.players[k].name) || k);
+
+  if (p.name === declaredWinner) {
+    const tag = document.createElement("p"); tag.className = "verify-status ok"; tag.style.margin = "0";
+    tag.textContent = `Declared ${seasonText(season)} winner.`;
+    actions.appendChild(tag);
+    const undo = document.createElement("button"); undo.className = "link"; undo.textContent = "Undo / reopen voting";
+    undo.addEventListener("click", () => { if (confirm("Remove this win and reopen voting for the season?")) send({ type: "clearWinner", season }); });
+    actions.appendChild(undo);
+  } else if (declaredWinner) {
+    const tag = document.createElement("p"); tag.className = "verify-status"; tag.style.margin = "0";
+    tag.textContent = `${declaredWinner} is already the declared winner for ${seasonText(season)}.`;
+    actions.appendChild(tag);
+  } else if (p.bingo) {
+    const status = document.createElement("p"); status.className = "vote-status";
+    status.textContent = `${votes.length} of 2 approvals` + (approverNames.length ? ` — approved by ${approverNames.join(", ")}` : "");
+    actions.appendChild(status);
+    if (isSelf) {
+      const note = document.createElement("p"); note.className = "hint"; note.style.margin = "0";
+      note.textContent = "You can't approve your own win — two others must approve it.";
+      actions.appendChild(note);
+    } else if (votes.includes(me)) {
+      const un = document.createElement("button"); un.className = "btn-outline btn-sm"; un.textContent = "Undo my approval";
+      un.addEventListener("click", () => send({ type: "unapproveWinner", playerId: verifyPid }));
+      actions.appendChild(un);
+    } else {
+      const ap = document.createElement("button"); ap.className = "btn btn-sm"; ap.textContent = `Approve ${p.name} as winner`;
+      ap.addEventListener("click", () => send({ type: "approveWinner", playerId: verifyPid }));
+      actions.appendChild(ap);
+    }
   } else {
-    const rec = document.createElement("button"); rec.className = "btn btn-sm";
-    rec.textContent = `Record as ${seasonText(season)} winner`;
-    rec.addEventListener("click", () => { send({ type: "recordWinner", playerId: verifyPid }); });
-    actions.appendChild(rec);
+    const note = document.createElement("p"); note.className = "hint"; note.style.margin = "0";
+    note.textContent = "No bingo yet — nothing to approve.";
+    actions.appendChild(note);
   }
 
-  const rm = document.createElement("button");
-  const isSelf = verifyPid === myKey();
-  rm.className = "link link-danger";
-  rm.textContent = isSelf ? "Leave the game" : "Remove this player";
-  rm.addEventListener("click", () => {
-    const msg = isSelf
-      ? "Leave the game? Your card and marks will be deleted."
-      : `Remove ${p.name} from the game? Their card and marks will be deleted.`;
-    if (!confirm(msg)) return;
-    send({ type: "removePlayer", playerId: verifyPid });
-    closeVerify();
-    if (isSelf) {
-      myName = ""; store.del("name");
-      buildStampPicker(); $("#name-input").value = "";
-      showScreen("screen-name");
-    }
-  });
-  actions.appendChild(rm);
+  // Remove / leave. Only Nick and Lauryn can remove other players.
+  if (isSelf) {
+    const rm = document.createElement("button"); rm.className = "link link-danger"; rm.textContent = "Leave the game";
+    rm.addEventListener("click", () => {
+      if (!confirm("Leave the game? Your card and marks will be deleted.")) return;
+      send({ type: "removePlayer", playerId: verifyPid }); closeVerify();
+      myName = ""; store.del("name"); buildStampPicker(); $("#name-input").value = ""; showScreen("screen-name");
+    });
+    actions.appendChild(rm);
+  } else if (ADMINS.has(me)) {
+    const rm = document.createElement("button"); rm.className = "link link-danger"; rm.textContent = "Remove this player";
+    rm.addEventListener("click", () => {
+      if (!confirm(`Remove ${p.name} from the game? Their card and marks will be deleted.`)) return;
+      send({ type: "removePlayer", playerId: verifyPid }); closeVerify();
+    });
+    actions.appendChild(rm);
+  }
 }
 $("#verify-close").addEventListener("click", closeVerify);
 $("#verify-modal").addEventListener("click", (e) => { if (e.target.id === "verify-modal") closeVerify(); });
