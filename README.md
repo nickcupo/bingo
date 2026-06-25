@@ -21,9 +21,12 @@ free plan.
   existing card via **Enter my card**.
 - A shared item list **anyone can edit**; cards are generated from it.
 - **Identity is your name** — re-enter the same name on any device to get your card back.
-- Live **Players** panel with each player's progress, a mini-card, and live **win odds**.
+- Live **Players** panel with each player's progress, a mini-card, and live **win odds**
+  (ranked by the [win rules](#how-winning-works): most Bingos, then most marked squares).
 - **Remote verification + voting**: open any player's card to verify a line; a winner is
   officially declared once **two other people approve** it.
+- **Contest squares**: dispute a specific marked square on someone else's board; the card
+  owner or an admin can uphold it (un-marking the square) or dismiss it.
 - **Seasonal winners**: one game per quarter (Spring / Summer / Fall / Winter), with a
   recorded winner per quarter and a running history.
 - **Stats tab**: how often each person has marked each item, across all games (the
@@ -124,6 +127,18 @@ Pushing new code keeps all of it. The things that *would* destroy data are liste
 `wrangler.jsonc` migrations or the Durable Object class name.
 
 ---
+
+## How winning works
+
+These rules are also shown in-app under the **Rules** link, and they drive the live odds
+and the Players ordering.
+
+1. Play continues until all planning meetings are completed.
+2. If only one player gets Bingo, they win.
+3. If several players get Bingo, the winner has the **most Bingos** (completed rows,
+   columns, or diagonals).
+4. If still tied, the winner has the **most marked squares** overall.
+5. If still tied, it goes to an **offline tiebreaker**.
 
 ## How a meeting works
 

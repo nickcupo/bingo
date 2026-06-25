@@ -64,6 +64,7 @@
         <div class="topbar-right">
           <span id="conn" class="conn"><i></i><span>connecting</span></span>
           <span id="me-label" class="me"></span>
+          <button id="btn-rules" class="link">Rules</button>
           <button id="btn-edit-name" class="link">Edit</button>
         </div>
       </header>
@@ -136,8 +137,28 @@
           <button id="verify-close" class="link">Close</button>
         </div>
         <p id="verify-status" class="verify-status"></p>
+        <p id="verify-contest-hint" class="hint" hidden>Tap a marked square to contest it.</p>
         <div id="verify-card" class="grid verify-grid"></div>
+        <div id="verify-contests"></div>
         <div id="verify-actions" class="verify-actions"></div>
+      </div>
+    </div>
+
+    <!-- Rules modal -->
+    <div id="rules-modal" class="modal" hidden>
+      <div class="modal-box modal-narrow">
+        <div class="modal-head">
+          <h2>How winning works</h2>
+          <button id="rules-close" class="link">Close</button>
+        </div>
+        <ol class="rules-list">
+          <li>Play continues until all planning meetings are completed.</li>
+          <li>If only one player gets Bingo, they win.</li>
+          <li>If several players get Bingo, the winner has the <b>most Bingos</b> (completed rows, columns, or diagonals).</li>
+          <li>If still tied, the winner has the <b>most marked squares</b> overall.</li>
+          <li>If still tied, it goes to an <b>offline tiebreaker</b>.</li>
+        </ol>
+        <p class="hint">The live odds and the Players order use these rules: most Bingos first, then most squares marked.</p>
       </div>
     </div>
 

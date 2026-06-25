@@ -128,21 +128,19 @@ export function rekeyByName(players) {
   return { players: out, changed };
 }
 
-// One-time backfill: count squares currently marked in the game into stats, so
-// stats reflect an already-in-progress game (not just marks made after upgrade).
-// Mutates `stats` and `statNames` in place.
-export function seedStatsFromMarks(players, stats, statNames) {
-  for (const [key, p] of Object.entries(players || {})) {
-    if (!Array.isArray(p?.marks) || !Array.isArray(p?.card)) continue;
-    for (let i = 0; i < 25; i++) {
-      if (i === 12 || !p.marks[i]) continue;
-      const text = String(p.card[i] || "").trim();
-      if (!text || text === "FREE" || text === "—" || text === "(add more items)") continue;
-      if (!stats[text]) stats[text] = {};
-      stats[text][key] = (stats[text][key] || 0) + 1;
-      statNames[key] = p.name;
+// One-time correction: early on, the stats backfill and live mark-counting could
+// both count the same square, leaving a count of 2. Within a single game a person
+// can only mark a given box once, so clamp every count to at most 1. (Counts can
+// legitimately exceed 1 again once games accumulate across future quarters.)
+// Returns true if anything changed.
+export function dedupeStats(stats) {
+  let changed = false;
+  for (const item of Object.keys(stats || {})) {
+    for (const k of Object.keys(stats[item])) {
+      if (stats[item][k] > 1) { stats[item][k] = 1; changed = true; }
     }
   }
+  return changed;
 }
 
 function freshMarks() {
@@ -184,13 +182,12 @@ export class BingoRoom {
       // { itemText: { playerKey: count } } plus a key->display-name map.
       this.stats = (await this.ctx.storage.get("stats")) || {};
       this.statNames = (await this.ctx.storage.get("statNames")) || {};
-      // One-time backfill: count squares already marked in the current game so
-      // stats reflect the in-progress game, not just marks made after upgrade.
-      if (!(await this.ctx.storage.get("statsSeededV1"))) {
-        seedStatsFromMarks(this.players, this.stats, this.statNames);
-        await this.ctx.storage.put("stats", this.stats);
-        await this.ctx.storage.put("statNames", this.statNames);
-        await this.ctx.storage.put("statsSeededV1", true);
+      // contests: { targetKey: { index: [contesterKey, ...] } } for the current game.
+      this.contests = (await this.ctx.storage.get("contests")) || {};
+      // One-time fix: clamp any double-counted stats to 1 per person per box.
+      if (!(await this.ctx.storage.get("statsDedupeV1"))) {
+        if (dedupeStats(this.stats)) await this.ctx.storage.put("stats", this.stats);
+        await this.ctx.storage.put("statsDedupeV1", true);
       }
     });
   }
@@ -251,6 +248,10 @@ export class BingoRoom {
         player.bingo = hasBingo(player.marks);
         await this.persistPlayers();
         await this.recordStat(player.card[i], pid, player.name, player.marks[i] ? 1 : -1);
+        // An unmarked square can't be contested; drop any contests on it.
+        if (!player.marks[i] && this.clearContest(pid, i)) {
+          await this.ctx.storage.put("contests", this.contests);
+        }
         this.broadcast(player.bingo && !wasBingo ? { bingoBy: pid } : null);
         return;
       }
@@ -281,6 +282,7 @@ export class BingoRoom {
         player.marks = freshMarks();
         player.bingo = false;
         await this.persistPlayers();
+        await this.dropContests(pid);
         return this.broadcast();
       }
 
@@ -295,6 +297,7 @@ export class BingoRoom {
         player.marks = freshMarks();
         player.bingo = false;
         await this.persistPlayers();
+        await this.dropContests(pid);
         return this.broadcast();
       }
 
@@ -304,6 +307,7 @@ export class BingoRoom {
         player.marks = freshMarks();
         player.bingo = false;
         await this.persistPlayers();
+        await this.dropContests(pid);
         return this.broadcast();
       }
 
@@ -325,7 +329,9 @@ export class BingoRoom {
           p.marks = freshMarks();
           p.bingo = false;
         }
+        this.contests = {};
         await this.persistPlayers();
+        await this.ctx.storage.put("contests", this.contests);
         return this.broadcast();
       }
 
@@ -343,6 +349,7 @@ export class BingoRoom {
         if (this.players[target]) {
           delete this.players[target];
           if (this.votes[target]) { delete this.votes[target]; await this.ctx.storage.put("votes", this.votes); }
+          if (this.contests[target]) { delete this.contests[target]; await this.ctx.storage.put("contests", this.contests); }
           await this.persistPlayers();
         }
         return this.broadcast();
@@ -354,6 +361,7 @@ export class BingoRoom {
         if (!season) return;
         this.season = season;
         this.votes = {};
+        this.contests = {};
         for (const p of Object.values(this.players)) {
           p.card = makeCard(this.items);
           p.marks = freshMarks();
@@ -361,6 +369,7 @@ export class BingoRoom {
         }
         await this.ctx.storage.put("season", this.season);
         await this.ctx.storage.put("votes", this.votes);
+        await this.ctx.storage.put("contests", this.contests);
         await this.persistPlayers();
         return this.broadcast();
       }
@@ -412,6 +421,46 @@ export class BingoRoom {
         }
         return this.broadcast();
       }
+
+      // Contest a specific marked square on someone else's board (dispute that
+      // it was really called). Toggles the sender's contest on that square.
+      case "contest": {
+        const target = String(msg.playerId || "");
+        const i = Number(msg.index);
+        const tp = this.players[target];
+        if (!tp || !pid || target === pid) return;        // can't contest your own board
+        if (!Number.isInteger(i) || i < 0 || i > 24 || i === 12) return;
+        if (!tp.marks[i]) return;                          // only a marked square can be contested
+        const key = String(i);
+        if (!this.contests[target]) this.contests[target] = {};
+        const list = this.contests[target][key] || [];
+        const at = list.indexOf(pid);
+        if (at >= 0) list.splice(at, 1); else list.push(pid);
+        if (list.length) this.contests[target][key] = list;
+        else this.clearContest(target, i);
+        if (this.contests[target] && Object.keys(this.contests[target]).length === 0) delete this.contests[target];
+        await this.ctx.storage.put("contests", this.contests);
+        return this.broadcast();
+      }
+
+      // Resolve a contest. Only the card's owner or an admin may decide.
+      // uphold=true un-marks the disputed square; either way the contest clears.
+      case "resolveContest": {
+        const target = String(msg.playerId || "");
+        const i = Number(msg.index);
+        const tp = this.players[target];
+        if (!tp || !pid) return;
+        if (pid !== target && !ADMINS.has(pid)) return;
+        if (!Number.isInteger(i) || i < 0 || i > 24 || i === 12) return;
+        if (msg.uphold && tp.marks[i]) {
+          tp.marks[i] = false;
+          tp.bingo = hasBingo(tp.marks);
+          await this.persistPlayers();
+          await this.recordStat(tp.card[i], target, tp.name, -1);
+        }
+        if (this.clearContest(target, i)) await this.ctx.storage.put("contests", this.contests);
+        return this.broadcast();
+      }
     }
   }
 
@@ -427,6 +476,23 @@ export class BingoRoom {
 
   async persistPlayers() {
     await this.ctx.storage.put("players", this.players);
+  }
+
+  // Remove contests on a single square. Returns true if something was removed.
+  clearContest(targetKey, index) {
+    const bucket = this.contests[targetKey];
+    if (!bucket || !(String(index) in bucket)) return false;
+    delete bucket[String(index)];
+    if (Object.keys(bucket).length === 0) delete this.contests[targetKey];
+    return true;
+  }
+
+  // Drop all contests on a player's board (their card/marks reset).
+  async dropContests(targetKey) {
+    if (this.contests[targetKey]) {
+      delete this.contests[targetKey];
+      await this.ctx.storage.put("contests", this.contests);
+    }
   }
 
   // Adjust the lifetime count of how often `playerKey` has marked `item`.
@@ -461,6 +527,7 @@ export class BingoRoom {
       votes: this.votes,
       stats: this.stats,
       statNames: this.statNames,
+      contests: this.contests,
       ...(extra || {}),
     });
     for (const ws of sockets) {

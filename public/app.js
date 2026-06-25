@@ -245,25 +245,45 @@ function makeStampEl(player) {
   if (player.stampImg) { const i = document.createElement("img"); i.className = "stamp-img"; i.src = player.stampImg; i.alt = ""; return i; }
   const s = document.createElement("span"); s.className = "stamp-emoji"; s.textContent = player.stamp || "✓"; s.style.color = player.color; return s;
 }
-function buildCardInto(container, player, interactive) {
+function buildCardInto(container, player, opts = {}) {
+  const { interactive = false, contests = null, onCell = null } = opts;
   container.innerHTML = "";
   for (let i = 0; i < 25; i++) {
     const isFree = i === 12, marked = player.marks[i];
+    const contestedBy = contests && contests[i] && contests[i].length ? contests[i] : null;
     const cell = document.createElement("div");
-    cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "");
+    cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "") + (contestedBy ? " contested" : "");
     if (marked && !isFree) cell.appendChild(makeStampEl(player));
     const t = document.createElement("span"); t.className = "cell-text"; t.textContent = player.card[i] || "";
     cell.appendChild(t);
-    if (interactive && !isFree) cell.addEventListener("click", () => send({ type: "toggle", index: i }));
+    if (contestedBy) {
+      const flag = document.createElement("span");
+      flag.className = "contest-flag";
+      flag.textContent = "⚑" + (contestedBy.length > 1 ? " " + contestedBy.length : "");
+      flag.title = "Contested";
+      cell.appendChild(flag);
+    }
+    if (onCell && !isFree) cell.addEventListener("click", () => onCell(i, marked));
+    else if (interactive && !isFree) cell.addEventListener("click", () => send({ type: "toggle", index: i }));
     container.appendChild(cell);
   }
+}
+
+// contests-for-a-player as an { index: [name, ...] } map (names, not keys).
+function contestsFor(state, key) {
+  const raw = (state.contests && state.contests[key]) || {};
+  const out = {};
+  for (const [idx, keys] of Object.entries(raw)) {
+    out[Number(idx)] = keys.map((k) => (state.players[k] && state.players[k].name) || (state.statNames && state.statNames[k]) || k);
+  }
+  return out;
 }
 
 function render(state) {
   $("#season-label").textContent = seasonText(state.season) + " game";
   const me = state.players[myKey()];
   const grid = $("#card");
-  if (me) { $("#my-bingo").hidden = !me.bingo; buildCardInto(grid, me, true); }
+  if (me) { $("#my-bingo").hidden = !me.bingo; buildCardInto(grid, me, { interactive: true, contests: contestsFor(state, myKey()) }); }
   else grid.innerHTML = "<p class='muted'>Joining…</p>";
 
   renderPlayers(state);
@@ -336,42 +356,57 @@ const ODDS_LINES = (() => {
   return lines;
 })();
 
-// Implied win odds from board state: a line needing fewer squares is weighted
-// exponentially higher, and having several near-complete lines adds up. Scores
-// are normalized across players so they read like market prices.
+// Number of completed lines on a card.
+function bingoCount(marks) {
+  let n = 0;
+  for (const line of ODDS_LINES) if (line.every((i) => marks[i])) n++;
+  return n;
+}
+
+// Implied win odds, aligned to the win rules: most Bingos first, then most
+// marked squares. Completed lines are weighted heavily; near-complete lines add
+// potential; overall marks act as the tiebreaker. Scores are normalized across
+// players so they read like market prices, and players are returned already
+// ranked by the actual rules (Bingos → marks → score).
 function computeOdds(state) {
   const scored = Object.entries(state.players).map(([key, p]) => {
-    let best = 5, score = 0;
+    let bingos = 0, potential = 0;
     for (const line of ODDS_LINES) {
-      let marked = 0;
-      for (const i of line) if (p.marks[i]) marked++;
-      const remaining = 5 - marked;
-      if (remaining < best) best = remaining;
-      score += Math.pow(4, -remaining);
+      let m = 0;
+      for (const i of line) if (p.marks[i]) m++;
+      if (m === 5) bingos++;
+      potential += Math.pow(m / 5, 3); // rewards near-complete lines; a full line = 1
     }
-    return { key, p, best, score };
+    const marked = p.marks.reduce((n, x) => n + (x ? 1 : 0), 0); // includes the free centre
+    const score = bingos * 5 + potential + marked / 24;
+    return { key, p, bingos, marked, score };
   });
   const total = scored.reduce((s, x) => s + x.score, 0) || 1;
   for (const x of scored) x.pct = x.score / total;
-  scored.sort((a, b) => b.pct - a.pct);
+  scored.sort((a, b) => b.bingos - a.bingos || b.marked - a.marked || b.score - a.score);
   return scored;
 }
 
 function renderPlayers(state) {
   const online = new Set(state.online || []);
   const winnerName = winnerFor(state, state.season);
-  const odds = {};
-  for (const x of computeOdds(state)) odds[x.key] = Math.round(x.pct * 100);
+  const info = {};
+  for (const x of computeOdds(state)) info[x.key] = x;
   const entries = Object.entries(state.players);
   $("#player-count").textContent = entries.length ? `${entries.length} in` : "";
+  // Sort: online first, then by the win rules (most Bingos → most marks → odds).
   entries.sort((a, b) => {
     const oa = online.has(a[0]) ? 0 : 1, ob = online.has(b[0]) ? 0 : 1;
     if (oa !== ob) return oa - ob;
-    return (odds[b[0]] || 0) - (odds[a[0]] || 0);
+    const A = info[a[0]] || {}, B = info[b[0]] || {};
+    return (B.bingos || 0) - (A.bingos || 0) || (B.marked || 0) - (A.marked || 0) || (B.pct || 0) - (A.pct || 0);
   });
   const box = $("#players"); box.innerHTML = "";
   for (const [pid, p] of entries) {
     const isOnline = online.has(pid), isMe = pid === myKey();
+    const x = info[pid] || { pct: 0, bingos: 0, marked: 1 };
+    const pct = Math.round((x.pct || 0) * 100);
+    const bingos = x.bingos || 0;
     const row = document.createElement("div");
     row.className = "player" + (isOnline ? "" : " offline");
 
@@ -379,10 +414,10 @@ function renderPlayers(state) {
     left.innerHTML =
       `<div class="pname"><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.name)}` +
       (isMe ? '<span class="tag">you</span>' : "") +
-      (p.bingo ? '<span class="winflag">bingo</span>' : "") +
+      (bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
       (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
-      `<span class="podds" title="Estimated odds to win">${odds[pid] ?? 0}%</span></div>` +
-      `<div class="pmeta">${countMarks(p.marks) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
+      `<span class="podds" title="Estimated odds to win">${pct}%</span></div>` +
+      `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
 
     const mini = document.createElement("div"); mini.className = "mini";
     for (let i = 0; i < 25; i++) { const c = document.createElement("i"); if (p.marks[i]) c.style.background = i === 12 ? "#c9c3b6" : p.color; mini.appendChild(c); }
@@ -430,16 +465,25 @@ function renderVerify() {
   const p = lastState.players[verifyPid];
   if (!p) { closeVerify(); return; }
   const season = lastState.season;
-  $("#verify-title").textContent = p.name + " — card";
-  const st = $("#verify-status");
-  const count = countMarks(p.marks) - 1;
-  if (p.bingo) { st.className = "verify-status ok"; st.textContent = `Has called bingo (${count}/24 marked). Confirm the line below is genuine.`; }
-  else { st.className = "verify-status"; st.textContent = `${count}/24 marked — no bingo yet.`; }
-  buildCardInto($("#verify-card"), p, false);
-
-  const actions = $("#verify-actions"); actions.innerHTML = "";
   const me = myKey();
   const isSelf = verifyPid === me;
+  const bingos = bingoCount(p.marks);
+  const count = countMarks(p.marks) - 1;
+
+  $("#verify-title").textContent = p.name + " — card";
+  const st = $("#verify-status");
+  if (p.bingo) { st.className = "verify-status ok"; st.textContent = `${bingos} bingo${bingos === 1 ? "" : "s"} · ${count}/24 marked. Confirm the line${bingos === 1 ? "" : "s"} below.`; }
+  else { st.className = "verify-status"; st.textContent = `${count}/24 marked — no bingo yet.`; }
+
+  // On another player's board, tapping a marked square contests it.
+  $("#verify-contest-hint").hidden = isSelf;
+  buildCardInto($("#verify-card"), p, {
+    contests: contestsFor(lastState, verifyPid),
+    onCell: isSelf ? null : (i, marked) => { if (marked) send({ type: "contest", playerId: verifyPid, index: i }); },
+  });
+  renderVerifyContests(p, me, isSelf);
+
+  const actions = $("#verify-actions"); actions.innerHTML = "";
   const declaredWinner = winnerFor(lastState, season);
   const votes = (lastState.votes && lastState.votes[verifyPid]) || [];
   const approverNames = votes.map((k) => (lastState.players[k] && lastState.players[k].name) || k);
@@ -496,8 +540,53 @@ function renderVerify() {
     actions.appendChild(rm);
   }
 }
+// List of contested squares on the viewed board, with resolve controls for the
+// card's owner or an admin.
+function renderVerifyContests(p, me, isSelf) {
+  const box = $("#verify-contests"); box.innerHTML = "";
+  const raw = (lastState.contests && lastState.contests[verifyPid]) || {};
+  const names = contestsFor(lastState, verifyPid);
+  const idxs = Object.keys(raw).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) return;
+  const canResolve = isSelf || ADMINS.has(me);
+
+  const head = document.createElement("div");
+  head.className = "contest-head";
+  head.textContent = `Contested squares (${idxs.length})`;
+  box.appendChild(head);
+
+  for (const i of idxs) {
+    const row = document.createElement("div"); row.className = "contest-row";
+    const inf = document.createElement("div"); inf.className = "contest-info";
+    inf.innerHTML =
+      `<span class="contest-sq">${escapeHtml(p.card[i] || "")}</span>` +
+      `<span class="contest-by">contested by ${names[i].map(escapeHtml).join(", ")}</span>`;
+    row.appendChild(inf);
+    if (canResolve) {
+      const acts = document.createElement("div"); acts.className = "contest-actions";
+      const up = document.createElement("button"); up.className = "btn-outline btn-sm danger-outline"; up.textContent = "Uphold (unmark)";
+      up.addEventListener("click", () => send({ type: "resolveContest", playerId: verifyPid, index: i, uphold: true }));
+      const dis = document.createElement("button"); dis.className = "btn-outline btn-sm"; dis.textContent = "Dismiss";
+      dis.addEventListener("click", () => send({ type: "resolveContest", playerId: verifyPid, index: i, uphold: false }));
+      acts.appendChild(up); acts.appendChild(dis);
+      row.appendChild(acts);
+    }
+    box.appendChild(row);
+  }
+  if (!canResolve) {
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "Only the card owner or an admin can resolve a contest.";
+    box.appendChild(note);
+  }
+}
+
 $("#verify-close").addEventListener("click", closeVerify);
 $("#verify-modal").addEventListener("click", (e) => { if (e.target.id === "verify-modal") closeVerify(); });
+
+// ---------- rules modal ----------
+$("#btn-rules").addEventListener("click", () => { $("#rules-modal").hidden = false; });
+$("#rules-close").addEventListener("click", () => { $("#rules-modal").hidden = true; });
+$("#rules-modal").addEventListener("click", (e) => { if (e.target.id === "rules-modal") $("#rules-modal").hidden = true; });
 
 // =====================================================================
 // New game modal
@@ -517,7 +606,7 @@ $("#newgame-confirm").addEventListener("click", () => {
   $("#newgame-modal").hidden = true;
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { closeVerify(); $("#newgame-modal").hidden = true; $("#import-modal").hidden = true; }
+  if (e.key === "Escape") { closeVerify(); $("#newgame-modal").hidden = true; $("#import-modal").hidden = true; $("#rules-modal").hidden = true; }
 });
 
 // =====================================================================

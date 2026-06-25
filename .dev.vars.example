@@ -1,0 +1,7 @@
+# Copy this file to `.dev.vars` for local development:
+#   cp .dev.vars.example .dev.vars
+#
+# `.dev.vars` is read by `wrangler dev` and is git-ignored (never committed).
+# In production the password comes from a Cloudflare secret instead:
+#   npx wrangler secret put SITE_PASSWORD
+SITE_PASSWORD=meeting-bingo

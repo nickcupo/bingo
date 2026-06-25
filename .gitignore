@@ -4,6 +4,8 @@ node_modules/
 # Local dev secrets — never commit (use `wrangler secret put` for prod)
 .dev.vars
 .dev.vars.*
+# …but DO track the template
+!.dev.vars.example
 
 # Wrangler local state / build output
 .wrangler/

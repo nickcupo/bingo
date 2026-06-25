@@ -69,7 +69,8 @@ constructor, written back on change):
 | `votes` | `{ [candidateKey]: approverKey[] }` | Current game's winner approvals; reset on new game. |
 | `stats` | `{ [itemText]: { [playerKey]: count } }` | Lifetime per-person mark counts. |
 | `statNames` | `{ [playerKey]: name }` | Display name for stats columns (kept even after removal). |
-| `statsSeededV1` | `true` | One-shot flag; marks the current-game backfill as done. |
+| `contests` | `{ [targetKey]: { [index]: contesterKey[] } }` | Disputed marked squares on each board; reset on new game / re-deal. |
+| `statsDedupeV1` | `true` | One-shot flag; marks the stats double-count fix as done. |
 
 ```js
 Player = {
@@ -108,6 +109,8 @@ sender. Validation lives in the DO; invalid messages are ignored.
 | `approveWinner` | `{ playerId }` | Approve a (bingo'd) candidate. `APPROVALS_NEEDED` distinct approvers declares them. |
 | `unapproveWinner` | `{ playerId }` | Withdraw the sender's approval. |
 | `clearWinner` | `{ season }` | Remove a declared winner; reopens voting for the current season. |
+| `contest` | `{ playerId, index }` | Toggle the sender's contest on a marked square of another player's board. |
+| `resolveContest` | `{ playerId, index, uphold }` | Owner/admin resolves a contest. `uphold:true` un-marks the square; either way the contest clears. |
 
 ### Server → client
 
@@ -118,7 +121,7 @@ A single message type:
   type: "state",
   items, players, online,        // online: array of currently-connected player keys
   season, winners, votes,
-  stats, statNames,
+  stats, statNames, contests,
   bingoBy?,                      // present once when a player just reached bingo (for the banner)
   winnerDeclared?,               // present once when approvals just declared a winner
 }
@@ -139,7 +142,7 @@ There is no partial/delta update — clients always render from the full snapsho
   (e.g. `(await storage.get("votes")) || {}`) so a live game upgrades cleanly. See
   [Deployment & data safety](#deployment--data-safety).
 - **Pure helpers for anything testable.** Migrations and derived logic are written as
-  exported pure functions (`rekeyByName`, `seedStatsFromMarks`) so they can be unit-tested
+  exported pure functions (`rekeyByName`, `dedupeStats`) so they can be unit-tested
   with Node. Follow that pattern.
 
 ## Front-end notes
@@ -173,8 +176,8 @@ game) → WebSocket → renderers → modals. A few things to know:
 1. Load it with a default in the constructor: `this.foo = (await ctx.storage.get("foo")) || {}`.
 2. Add it to the `broadcast()` payload.
 3. Mutate + persist it in the relevant message handlers.
-4. If you need to **backfill** existing data on upgrade, write a pure function (like
-   `seedStatsFromMarks`) and run it once behind a flag (like `statsSeededV1`) so it can't
+4. If you need to **backfill or correct** existing data on upgrade, write a pure function
+   (like `dedupeStats`) and run it once behind a flag (like `statsDedupeV1`) so it can't
    double-apply on the next restart. Unit-test the function.
 
 ## Deployment & data safety
@@ -200,7 +203,7 @@ Durable Object storage and is **not** affected by code deploys.
 - After a deploy, players with the game open should refresh once to load new code.
 
 There are already two such migrations to model yours on: `rekeyByName` (re-keys players by
-name) and `seedStatsFromMarks` (one-time stats backfill, gated by `statsSeededV1`).
+name, idempotent) and `dedupeStats` (one-time stats double-count fix, gated by `statsDedupeV1`).
 
 ## Testing
 
@@ -216,7 +219,7 @@ There's no test framework; testing is lightweight and deliberate.
     console.log(rekeyByName({ 'rand-id': { name:'Nick', marks:[], card:[] } }));
   "
   ```
-  Currently exported for testing: `rekeyByName`, `seedStatsFromMarks`. Add more as needed.
+  Currently exported for testing: `rekeyByName`, `dedupeStats`. Add more as needed.
 
 When you add non-trivial logic, prefer the pure-function-plus-Node-check pattern.
 
