@@ -26,7 +26,14 @@ window.addEventListener("unhandledrejection", (e) => { console.error(e.reason); 
 
 function showScreen(id) {
   for (const s of document.querySelectorAll(".screen")) s.hidden = true;
-  $("#" + id).hidden = false;
+  const el = $("#" + id);
+  el.hidden = false;
+  replayAnim(el, "screen-in");
+}
+function replayAnim(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -56,6 +63,8 @@ let lastState = null;
 let listDirty = false;
 let verifyPid = null;
 let activeTab = "game";
+let knownPlayers = new Set();
+let hadBingoBanner = false;
 
 // =====================================================================
 // Password
@@ -224,8 +233,9 @@ function setConn(cls, text) {
 $("#btn-new-card").addEventListener("click", () => { if (confirm("Deal yourself a fresh card? Your marks will be cleared.")) send({ type: "newCard" }); });
 $("#btn-clear").addEventListener("click", () => { if (confirm("Clear all your marks?")) send({ type: "clearMarks" }); });
 $("#settings-toggle").addEventListener("click", () => {
-  const open = $("#settings").hidden;
-  $("#settings").hidden = !open;
+  const el = $("#settings");
+  const open = !el.classList.contains("is-open");
+  el.classList.toggle("is-open", open);
   $("#settings-toggle").setAttribute("aria-expanded", String(open));
   if (open && lastState) fillListEditor(lastState.items);
 });
@@ -245,26 +255,64 @@ function makeStampEl(player) {
   if (player.stampImg) { const i = document.createElement("img"); i.className = "stamp-img"; i.src = player.stampImg; i.alt = ""; return i; }
   const s = document.createElement("span"); s.className = "stamp-emoji"; s.textContent = player.stamp || "✓"; s.style.color = player.color; return s;
 }
-function buildCardInto(container, player, opts = {}) {
-  const { interactive = false, contests = null, onCell = null } = opts;
-  container.innerHTML = "";
+function cardTextSame(container, player) {
+  const cells = container.querySelectorAll(".cell");
+  if (cells.length !== 25) return false;
   for (let i = 0; i < 25; i++) {
-    const isFree = i === 12, marked = player.marks[i];
-    const contestedBy = contests && contests[i] && contests[i].length ? contests[i] : null;
-    const cell = document.createElement("div");
-    cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "") + (contestedBy ? " contested" : "");
-    if (marked && !isFree) cell.appendChild(makeStampEl(player));
-    const t = document.createElement("span"); t.className = "cell-text"; t.textContent = player.card[i] || "";
-    cell.appendChild(t);
-    if (contestedBy) {
-      const flag = document.createElement("span");
+    const t = cells[i].querySelector(".cell-text");
+    if (!t || t.textContent !== (player.card[i] || "")) return false;
+  }
+  return true;
+}
+function syncCell(cell, i, player, opts) {
+  const { interactive = false, contests = null, onCell = null } = opts;
+  const isFree = i === 12;
+  const marked = player.marks[i];
+  const contestedBy = contests && contests[i] && contests[i].length ? contests[i] : null;
+  const wasMarked = cell.classList.contains("marked");
+
+  cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "") + (contestedBy ? " contested" : "");
+
+  let t = cell.querySelector(".cell-text");
+  if (!t) { t = document.createElement("span"); t.className = "cell-text"; cell.appendChild(t); }
+  t.textContent = player.card[i] || "";
+
+  const stamp = cell.querySelector(".stamp-emoji, .stamp-img");
+  if (marked && !isFree) {
+    if (!stamp) {
+      cell.insertBefore(makeStampEl(player), t);
+      if (!wasMarked) replayAnim(cell, "mark-pop");
+    }
+  } else if (stamp) stamp.remove();
+
+  let flag = cell.querySelector(".contest-flag");
+  if (contestedBy) {
+    const label = "⚑" + (contestedBy.length > 1 ? " " + contestedBy.length : "");
+    if (!flag) {
+      flag = document.createElement("span");
       flag.className = "contest-flag";
-      flag.textContent = "⚑" + (contestedBy.length > 1 ? " " + contestedBy.length : "");
       flag.title = "Contested";
       cell.appendChild(flag);
     }
-    if (onCell && !isFree) cell.addEventListener("click", () => onCell(i, marked));
+    flag.textContent = label;
+  } else if (flag) flag.remove();
+
+  if (!cell.dataset.bound) {
+    cell.dataset.bound = "1";
+    if (onCell && !isFree) cell.addEventListener("click", () => onCell(i, player.marks[i]));
     else if (interactive && !isFree) cell.addEventListener("click", () => send({ type: "toggle", index: i }));
+  }
+}
+function buildCardInto(container, player, opts = {}) {
+  if (cardTextSame(container, player)) {
+    const cells = container.querySelectorAll(".cell");
+    for (let i = 0; i < 25; i++) syncCell(cells[i], i, player, opts);
+    return;
+  }
+  container.innerHTML = "";
+  for (let i = 0; i < 25; i++) {
+    const cell = document.createElement("div");
+    syncCell(cell, i, player, opts);
     container.appendChild(cell);
   }
 }
@@ -283,8 +331,18 @@ function render(state) {
   $("#season-label").textContent = seasonText(state.season) + " game";
   const me = state.players[myKey()];
   const grid = $("#card");
-  if (me) { $("#my-bingo").hidden = !me.bingo; buildCardInto(grid, me, { interactive: true, contests: contestsFor(state, myKey()) }); }
-  else grid.innerHTML = "<p class='muted'>Joining…</p>";
+  if (me) {
+    const bingoEl = $("#my-bingo");
+    if (me.bingo && !hadBingoBanner) {
+      bingoEl.hidden = false;
+      replayAnim(bingoEl, "note-in");
+      hadBingoBanner = true;
+    } else if (!me.bingo) {
+      bingoEl.hidden = true;
+      hadBingoBanner = false;
+    }
+    buildCardInto(grid, me, { interactive: true, contests: contestsFor(state, myKey()) });
+  } else grid.innerHTML = "<p class='muted'>Joining…</p>";
 
   // Starting a new game is admin-only and wipes everyone's cards — hide it otherwise.
   $("#btn-new-game").hidden = !isAdmin();
@@ -293,7 +351,7 @@ function render(state) {
   renderWinners(state);
   if (activeTab === "stats") renderStats(state);
   if (verifyPid) renderVerify();
-  if (!$("#settings").hidden) fillListEditor(state.items);
+  if ($("#settings").classList.contains("is-open")) fillListEditor(state.items);
 }
 
 // ---------- tabs ----------
@@ -301,10 +359,13 @@ $("#tab-game").addEventListener("click", () => setTab("game"));
 $("#tab-stats").addEventListener("click", () => setTab("stats"));
 function setTab(tab) {
   activeTab = tab;
-  $("#tab-game-content").hidden = tab !== "game";
-  $("#stats-view").hidden = tab !== "stats";
+  const gamePanel = $("#tab-game-content");
+  const statsPanel = $("#stats-view");
+  gamePanel.hidden = tab !== "game";
+  statsPanel.hidden = tab !== "stats";
   $("#tab-game").classList.toggle("active", tab === "game");
   $("#tab-stats").classList.toggle("active", tab === "stats");
+  replayAnim(tab === "game" ? gamePanel : statsPanel, "tab-panel-in");
   if (tab === "stats" && lastState) renderStats(lastState);
 }
 
@@ -391,6 +452,44 @@ function computeOdds(state) {
   return scored;
 }
 
+function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew) {
+  const pct = Math.round((x.pct || 0) * 100);
+  const bingos = x.bingos || 0;
+  row.className = "player" + (isOnline ? "" : " offline") + (isNew ? " player-new" : "");
+  row.dataset.pid = pid;
+
+  let left = row.querySelector(".pleft");
+  if (!left) {
+    left = document.createElement("div");
+    left.className = "pleft";
+    row.insertBefore(left, row.firstChild);
+  }
+  left.innerHTML =
+    `<div class="pname"><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.name)}` +
+    (isMe ? '<span class="tag">you</span>' : "") +
+    (bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
+    (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
+    `<span class="podds" title="Estimated odds to win">${pct}%</span></div>` +
+    `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
+
+  let mini = row.querySelector(".mini");
+  if (!mini) {
+    mini = document.createElement("div");
+    mini.className = "mini";
+    row.appendChild(mini);
+  }
+  while (mini.children.length < 25) mini.appendChild(document.createElement("i"));
+  while (mini.children.length > 25) mini.lastChild.remove();
+  for (let i = 0; i < 25; i++) {
+    mini.children[i].style.background = p.marks[i] ? (i === 12 ? "#c9c3b6" : p.color) : "#eee9df";
+  }
+
+  if (!row.dataset.bound) {
+    row.dataset.bound = "1";
+    row.addEventListener("click", () => openVerify(pid));
+  }
+}
+
 function renderPlayers(state) {
   const online = new Set(state.online || []);
   const winnerName = winnerFor(state, state.season);
@@ -398,38 +497,29 @@ function renderPlayers(state) {
   for (const x of computeOdds(state)) info[x.key] = x;
   const entries = Object.entries(state.players);
   $("#player-count").textContent = entries.length ? `${entries.length} in` : "";
-  // Rank purely by standing (most Bingos → most marks → odds), regardless of
-  // whether a player is currently online.
   entries.sort((a, b) => {
     const A = info[a[0]] || {}, B = info[b[0]] || {};
     return (B.bingos || 0) - (A.bingos || 0) || (B.marked || 0) - (A.marked || 0) || (B.pct || 0) - (A.pct || 0);
   });
-  const box = $("#players"); box.innerHTML = "";
-  for (const [pid, p] of entries) {
-    const isOnline = online.has(pid), isMe = pid === myKey();
-    const x = info[pid] || { pct: 0, bingos: 0, marked: 1 };
-    const pct = Math.round((x.pct || 0) * 100);
-    const bingos = x.bingos || 0;
-    const row = document.createElement("div");
-    row.className = "player" + (isOnline ? "" : " offline");
 
-    const left = document.createElement("div");
-    left.innerHTML =
-      `<div class="pname"><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.name)}` +
-      (isMe ? '<span class="tag">you</span>' : "") +
-      (bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
-      (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
-      `<span class="podds" title="Estimated odds to win">${pct}%</span></div>` +
-      `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`;
-
-    const mini = document.createElement("div"); mini.className = "mini";
-    for (let i = 0; i < 25; i++) { const c = document.createElement("i"); if (p.marks[i]) c.style.background = i === 12 ? "#c9c3b6" : p.color; mini.appendChild(c); }
-
-    row.appendChild(left); row.appendChild(mini);
-    row.addEventListener("click", () => openVerify(pid));
-    box.appendChild(row);
+  const box = $("#players");
+  if (!entries.length) {
+    box.innerHTML = "<p class='wempty'>No one has joined yet.</p>";
+    knownPlayers.clear();
+    return;
   }
-  if (!entries.length) box.innerHTML = "<p class='wempty'>No one has joined yet.</p>";
+
+  const existing = new Map([...box.querySelectorAll(".player")].map((r) => [r.dataset.pid, r]));
+  const frag = document.createDocumentFragment();
+  for (const [pid, p] of entries) {
+    let row = existing.get(pid);
+    const isNew = !knownPlayers.has(pid);
+    if (!row) row = document.createElement("div");
+    updatePlayerRow(row, pid, p, info[pid] || { pct: 0, bingos: 0, marked: 1 }, online.has(pid), pid === myKey(), winnerName, isNew);
+    if (isNew) knownPlayers.add(pid);
+    frag.appendChild(row);
+  }
+  box.replaceChildren(frag);
 }
 
 function winnerFor(state, season) {
@@ -660,6 +750,7 @@ function announceBingo(pid) {
   const el = $("#announce");
   el.textContent = `${p.name} called bingo. Select their name to verify the card.`;
   el.hidden = false;
+  replayAnim(el, "announce-in");
   clearTimeout(announceTimer);
   announceTimer = setTimeout(() => { el.hidden = true; }, 12000);
 }
