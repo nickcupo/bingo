@@ -128,22 +128,33 @@ export function rekeyByName(players) {
   return { players: out, changed };
 }
 
-// Items that never count toward stats.
-const STAT_SKIP = new Set(["", "free", "—", "(add more items)"]);
+// Canonical keys that never count toward stats.
+const STAT_SKIP = new Set(["", "free", "add more items"]);
 
-// Normalize an item's text for display: fold whitespace and curly quotes, trim,
-// and strip a single pair of surrounding quotes. Keeps the original casing. The
-// stats row KEY is this value lower-cased, so calls that differ only by spacing,
-// quote style, or case collapse into one row (and stay merged going forward).
+// Pretty display label: fold whitespace, curly quotes, and the many Unicode
+// hyphen/dash variants; trim; strip a single pair of surrounding quotes. Keeps
+// the original casing for display.
 function displayItem(s) {
   return String(s || "")
     .normalize("NFC")
     .replace(/[‘’ʼ]/g, "'")
     .replace(/[“”]/g, '"')
+    .replace(/[‐‑‒–—―−]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^"(.+)"$/, "$1")
     .replace(/^'(.+)'$/, "$1")
+    .trim();
+}
+
+// Canonical grouping key for a stats row. Aggressively folds case and ALL
+// punctuation/symbols so calls that differ only by quotes, hyphen style, spacing,
+// or stray punctuation collapse into one row — e.g. these all key the same:
+//   'Low-hanging fruit" or "Quick win', 'Low‑hanging fruit…', 'Low hanging fruit…'
+function canonicalKey(s) {
+  return displayItem(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
@@ -155,23 +166,23 @@ function preferLabel(current, candidate) {
   return current;
 }
 
-// One-time migration: regroup existing stats by the normalized key so duplicate
-// rows (whitespace / quote / case variants of the same call) merge into one. For
-// this first game a person can have marked a box at most once, so each present
-// person counts as 1. Returns { stats, labels }.
-export function mergeStats(stats) {
-  const out = {}, labels = {};
-  for (const [rawItem, byPlayer] of Object.entries(stats || {})) {
-    const label = displayItem(rawItem);
-    const key = label.toLowerCase();
+// One-time migration: regroup existing stats by the canonical key so duplicate
+// rows (quote / hyphen / spacing / punctuation / case variants of the same call)
+// merge into one. `labels` carries the existing pretty display text so the merged
+// row keeps a nice label. For this first game a person can have marked a box at
+// most once, so each present person counts as 1. Returns { stats, labels }.
+export function mergeStats(stats, labels = {}) {
+  const out = {}, outLabels = {};
+  for (const [oldKey, byPlayer] of Object.entries(stats || {})) {
+    const key = canonicalKey(oldKey);
     if (STAT_SKIP.has(key)) continue;
     if (!out[key]) out[key] = {};
-    labels[key] = preferLabel(labels[key], label);
+    outLabels[key] = preferLabel(outLabels[key], displayItem(labels[oldKey] || oldKey));
     for (const [pk, n] of Object.entries(byPlayer)) {
       if (n > 0) out[key][pk] = 1;
     }
   }
-  return { stats: out, labels };
+  return { stats: out, labels: outLabels };
 }
 
 function freshMarks() {
@@ -217,15 +228,15 @@ export class BingoRoom {
       this.statLabels = (await this.ctx.storage.get("statLabels")) || {};
       // contests: { targetKey: { index: [contesterKey, ...] } } for the current game.
       this.contests = (await this.ctx.storage.get("contests")) || {};
-      // One-time fix: merge duplicate stat rows (whitespace / quote / case
-      // variants of the same call) into one normalized row.
-      if (!(await this.ctx.storage.get("statsMergeV1"))) {
-        const merged = mergeStats(this.stats);
+      // One-time fix: merge duplicate stat rows (quote / hyphen / spacing /
+      // punctuation / case variants of the same call) into one canonical row.
+      if (!(await this.ctx.storage.get("statsMergeV2"))) {
+        const merged = mergeStats(this.stats, this.statLabels);
         this.stats = merged.stats;
         this.statLabels = merged.labels;
         await this.ctx.storage.put("stats", this.stats);
         await this.ctx.storage.put("statLabels", this.statLabels);
-        await this.ctx.storage.put("statsMergeV1", true);
+        await this.ctx.storage.put("statsMergeV2", true);
       }
     });
   }
@@ -361,18 +372,6 @@ export class BingoRoom {
         return this.broadcast();
       }
 
-      case "reshuffleAll": {
-        for (const p of Object.values(this.players)) {
-          p.card = makeCard(this.items);
-          p.marks = freshMarks();
-          p.bingo = false;
-        }
-        this.contests = {};
-        await this.persistPlayers();
-        await this.ctx.storage.put("contests", this.contests);
-        return this.broadcast();
-      }
-
       case "resetItems": {
         this.items = [...DEFAULT_ITEMS];
         await this.ctx.storage.put("items", this.items);
@@ -394,9 +393,10 @@ export class BingoRoom {
       }
 
       // Start a new game for a quarter: set the season and deal fresh cards.
+      // Admin-only — this clears everyone's cards and marks.
       case "newGame": {
         const season = cleanSeason(msg.season);
-        if (!season) return;
+        if (!season || !ADMINS.has(pid)) return;
         this.season = season;
         this.votes = {};
         this.contests = {};
@@ -445,10 +445,10 @@ export class BingoRoom {
         return this.broadcast();
       }
 
-      // Remove a declared winner and reopen voting for that season.
+      // Remove a declared winner and reopen voting for that season. Admin-only.
       case "clearWinner": {
         const season = cleanSeason(msg.season);
-        if (!season) return;
+        if (!season || !ADMINS.has(pid)) return;
         this.winners = this.winners.filter(
           (w) => !(w.term === season.term && w.year === season.year),
         );
@@ -536,9 +536,9 @@ export class BingoRoom {
   // Adjust the lifetime count of how often `playerKey` has marked `item`.
   // delta is +1 (marked) or -1 (un-marked, e.g. a misclick correction).
   async recordStat(item, playerKey, name, delta) {
-    const label = displayItem(item);
-    const key = label.toLowerCase();
+    const key = canonicalKey(item);
     if (STAT_SKIP.has(key)) return;
+    const label = displayItem(item);
     if (!this.stats[key]) this.stats[key] = {};
     const next = Math.max(0, (this.stats[key][playerKey] || 0) + delta);
     if (next === 0) delete this.stats[key][playerKey];

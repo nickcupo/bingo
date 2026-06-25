@@ -40,8 +40,9 @@ const STAMPS = ["✓", "●", "★", "◆", "▲", "✕"];
 // Identity is your name (normalized), so the same name gets the same card on
 // any device. Must match the server's normalization: trim + lowercase.
 function myKey() { return myName.trim().toLowerCase(); }
-// Only these names may remove other players.
+// Only these names may remove players, start a new game, or undo a winner.
 const ADMINS = new Set(["nick", "lauryn"]);
+function isAdmin() { return ADMINS.has(myKey()); }
 let token = store.get("token");
 const DEFAULT_STAMP_IMG = "/stamps/horton.png";
 let myName = store.get("name") || "";
@@ -234,7 +235,6 @@ $("#btn-save-list").addEventListener("click", () => {
   listDirty = false; send({ type: "updateList", items });
 });
 $("#btn-reset-list").addEventListener("click", () => { if (confirm("Reset the list to the default phrases?")) send({ type: "resetItems" }); });
-$("#btn-reshuffle").addEventListener("click", () => { if (confirm("Deal new cards to everyone? All marks are cleared for all players.")) send({ type: "reshuffleAll" }); });
 $("#list-text").addEventListener("input", () => { listDirty = true; });
 function fillListEditor(items) { const ta = $("#list-text"); if (document.activeElement === ta || listDirty) return; ta.value = items.join("\n"); }
 
@@ -285,6 +285,9 @@ function render(state) {
   const grid = $("#card");
   if (me) { $("#my-bingo").hidden = !me.bingo; buildCardInto(grid, me, { interactive: true, contests: contestsFor(state, myKey()) }); }
   else grid.innerHTML = "<p class='muted'>Joining…</p>";
+
+  // Starting a new game is admin-only and wipes everyone's cards — hide it otherwise.
+  $("#btn-new-game").hidden = !isAdmin();
 
   renderPlayers(state);
   renderWinners(state);
@@ -395,10 +398,9 @@ function renderPlayers(state) {
   for (const x of computeOdds(state)) info[x.key] = x;
   const entries = Object.entries(state.players);
   $("#player-count").textContent = entries.length ? `${entries.length} in` : "";
-  // Sort: online first, then by the win rules (most Bingos → most marks → odds).
+  // Rank purely by standing (most Bingos → most marks → odds), regardless of
+  // whether a player is currently online.
   entries.sort((a, b) => {
-    const oa = online.has(a[0]) ? 0 : 1, ob = online.has(b[0]) ? 0 : 1;
-    if (oa !== ob) return oa - ob;
     const A = info[a[0]] || {}, B = info[b[0]] || {};
     return (B.bingos || 0) - (A.bingos || 0) || (B.marked || 0) - (A.marked || 0) || (B.pct || 0) - (A.pct || 0);
   });
@@ -493,9 +495,11 @@ function renderVerify() {
     const tag = document.createElement("p"); tag.className = "verify-status ok"; tag.style.margin = "0";
     tag.textContent = `Declared ${seasonText(season)} winner.`;
     actions.appendChild(tag);
-    const undo = document.createElement("button"); undo.className = "link"; undo.textContent = "Undo / reopen voting";
-    undo.addEventListener("click", () => { if (confirm("Remove this win and reopen voting for the season?")) send({ type: "clearWinner", season }); });
-    actions.appendChild(undo);
+    if (isAdmin()) {
+      const undo = document.createElement("button"); undo.className = "link"; undo.textContent = "Undo / reopen voting";
+      undo.addEventListener("click", () => { if (confirm("Remove this win and reopen voting for the season?")) send({ type: "clearWinner", season }); });
+      actions.appendChild(undo);
+    }
   } else if (declaredWinner) {
     const tag = document.createElement("p"); tag.className = "verify-status"; tag.style.margin = "0";
     tag.textContent = `${declaredWinner} is already the declared winner for ${seasonText(season)}.`;
