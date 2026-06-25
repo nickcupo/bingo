@@ -128,6 +128,23 @@ export function rekeyByName(players) {
   return { players: out, changed };
 }
 
+// One-time backfill: count squares currently marked in the game into stats, so
+// stats reflect an already-in-progress game (not just marks made after upgrade).
+// Mutates `stats` and `statNames` in place.
+export function seedStatsFromMarks(players, stats, statNames) {
+  for (const [key, p] of Object.entries(players || {})) {
+    if (!Array.isArray(p?.marks) || !Array.isArray(p?.card)) continue;
+    for (let i = 0; i < 25; i++) {
+      if (i === 12 || !p.marks[i]) continue;
+      const text = String(p.card[i] || "").trim();
+      if (!text || text === "FREE" || text === "—" || text === "(add more items)") continue;
+      if (!stats[text]) stats[text] = {};
+      stats[text][key] = (stats[text][key] || 0) + 1;
+      statNames[key] = p.name;
+    }
+  }
+}
+
 function freshMarks() {
   const m = new Array(25).fill(false);
   m[12] = true; // free space
@@ -167,6 +184,14 @@ export class BingoRoom {
       // { itemText: { playerKey: count } } plus a key->display-name map.
       this.stats = (await this.ctx.storage.get("stats")) || {};
       this.statNames = (await this.ctx.storage.get("statNames")) || {};
+      // One-time backfill: count squares already marked in the current game so
+      // stats reflect the in-progress game, not just marks made after upgrade.
+      if (!(await this.ctx.storage.get("statsSeededV1"))) {
+        seedStatsFromMarks(this.players, this.stats, this.statNames);
+        await this.ctx.storage.put("stats", this.stats);
+        await this.ctx.storage.put("statNames", this.statNames);
+        await this.ctx.storage.put("statsSeededV1", true);
+      }
     });
   }
 

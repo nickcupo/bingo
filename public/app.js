@@ -307,9 +307,9 @@ function renderStats(state) {
 
   $("#stats-count").textContent = `${items.length} items · ${playerKeys.length} people`;
 
-  let h = "<div class='stats-table-wrap'><table class='stats'><thead><tr><th>Item</th>";
+  let h = "<div class='stats-table-wrap'><table class='stats'><thead><tr><th class='item'>Item</th>";
   for (const k of playerKeys) h += `<th>${escapeHtml(names[k] || k)}</th>`;
-  h += "<th>Total</th></tr></thead><tbody>";
+  h += "<th class='tot'>Total</th></tr></thead><tbody>";
   for (const item of items) {
     h += `<tr><td class="item">${escapeHtml(item)}</td>`;
     for (const k of playerKeys) {
@@ -321,7 +321,7 @@ function renderStats(state) {
   let grand = 0;
   h += "</tbody><tfoot><tr><td class='item'>Total</td>";
   for (const k of playerKeys) { h += `<td>${playerTotals[k]}</td>`; grand += playerTotals[k]; }
-  h += `<td>${grand}</td></tr></tfoot></table></div>`;
+  h += `<td class='tot'>${grand}</td></tr></tfoot></table></div>`;
   box.innerHTML = h;
 }
 

@@ -2,6 +2,7 @@
   "name": "meeting-bingo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Online multiplayer custom bingo for meetings, on Cloudflare Workers.",
   "scripts": {
     "dev": "wrangler dev",

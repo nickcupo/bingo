@@ -148,10 +148,11 @@ button { cursor: pointer; }
 .cell {
   position: relative; aspect-ratio: 1 / 1;
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;
-  padding: .4rem;
+  padding: .35rem;
   display: flex; align-items: center; justify-content: center; text-align: center;
-  font-size: clamp(.62rem, 1.5vw, .82rem); line-height: 1.2;
+  font-size: clamp(.56rem, 1.45vw, .82rem); line-height: 1.18;
   cursor: pointer; user-select: none; overflow: hidden;
+  overflow-wrap: anywhere; word-break: break-word; hyphens: auto;
 }
 .cell:hover { border-color: var(--ink); }
 .cell.free {
@@ -223,21 +224,41 @@ button { cursor: pointer; }
 
 /* stats tab */
 .stats-view { max-width: 1180px; margin: 0 auto; padding: 1.5rem; }
-.stats-table-wrap { overflow-x: auto; }
-table.stats { border-collapse: collapse; width: 100%; font-size: .85rem; }
+.stats-table-wrap {
+  overflow: auto; max-height: 70vh;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+table.stats { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
 .stats th, .stats td {
-  padding: .45rem .7rem; border-bottom: 1px solid var(--line);
-  text-align: right; white-space: nowrap;
+  padding: .4rem .55rem; border-bottom: 1px solid var(--line);
+  text-align: center; white-space: nowrap; min-width: 2.4rem;
+  font-variant-numeric: tabular-nums;
 }
-.stats thead th { font-weight: 600; border-bottom: 2px solid var(--line-strong); }
-.stats th.item, .stats td.item { text-align: left; }
-.stats td.item { font-weight: 500; white-space: normal; max-width: 280px; }
-.stats thead th:first-child, .stats td.item, .stats tfoot td.item {
-  position: sticky; left: 0; background: var(--surface);
+.stats thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
+  font-weight: 600; border-bottom: 2px solid var(--line-strong); vertical-align: bottom;
 }
+.stats th.item, .stats td.item {
+  text-align: left; white-space: normal; font-weight: 500;
+  min-width: 190px; max-width: 260px;
+}
+/* pinned item column */
+.stats th.item, .stats td.item, .stats tfoot td.item {
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+  border-right: 1px solid var(--line-strong);
+}
+.stats thead th.item { z-index: 3; }
+.stats tbody tr:nth-child(even) td,
+.stats tbody tr:nth-child(even) td.item { background: #f3f1ec; }
+.stats tbody tr:hover td,
+.stats tbody tr:hover td.item { background: var(--accent-weak); }
 .stats td.zero { color: var(--line-strong); }
-.stats td.tot, .stats th:last-child { font-weight: 700; }
-.stats tfoot td { font-weight: 700; border-top: 2px solid var(--line-strong); border-bottom: none; }
+.stats th.tot, .stats td.tot { font-weight: 700; }
+.stats tfoot td {
+  position: sticky; bottom: 0; z-index: 1; background: var(--surface);
+  font-weight: 700; border-top: 2px solid var(--line-strong);
+}
+.stats tfoot td.item { z-index: 2; }
 
 @media (max-width: 880px) { .stats-view { padding: 1rem; } }
 .wempty { color: var(--muted); font-size: .85rem; }
