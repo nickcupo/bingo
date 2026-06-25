@@ -76,11 +76,21 @@ function shuffle(arr) {
   return a;
 }
 
-// Build a 5x5 card (24 items + FREE center) from the item pool.
+// Build a 5x5 card (24 items + FREE center) from the item pool. De-duplicates by
+// canonical key so the same call never lands on a card twice (handles exact and
+// near-duplicate list entries like "Synergy" / "\"Synergy\"").
 function makeCard(items) {
-  const clean = items.map((s) => String(s).trim()).filter(Boolean);
+  const seen = new Set();
+  const clean = [];
+  for (const raw of items) {
+    const s = String(raw).trim();
+    const key = canonicalKey(s);
+    if (STAT_SKIP.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    clean.push(s); // keep the original display text
+  }
   let pool = shuffle(clean);
-  // If there aren't 24 distinct items, cycle to fill the gaps.
+  // Only repeats if there are fewer than 24 distinct items to choose from.
   while (pool.length > 0 && pool.length < 24) {
     pool = pool.concat(shuffle(clean));
   }
