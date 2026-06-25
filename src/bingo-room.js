@@ -128,19 +128,50 @@ export function rekeyByName(players) {
   return { players: out, changed };
 }
 
-// One-time correction: early on, the stats backfill and live mark-counting could
-// both count the same square, leaving a count of 2. Within a single game a person
-// can only mark a given box once, so clamp every count to at most 1. (Counts can
-// legitimately exceed 1 again once games accumulate across future quarters.)
-// Returns true if anything changed.
-export function dedupeStats(stats) {
-  let changed = false;
-  for (const item of Object.keys(stats || {})) {
-    for (const k of Object.keys(stats[item])) {
-      if (stats[item][k] > 1) { stats[item][k] = 1; changed = true; }
+// Items that never count toward stats.
+const STAT_SKIP = new Set(["", "free", "—", "(add more items)"]);
+
+// Normalize an item's text for display: fold whitespace and curly quotes, trim,
+// and strip a single pair of surrounding quotes. Keeps the original casing. The
+// stats row KEY is this value lower-cased, so calls that differ only by spacing,
+// quote style, or case collapse into one row (and stay merged going forward).
+function displayItem(s) {
+  return String(s || "")
+    .normalize("NFC")
+    .replace(/[‘’ʼ]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^"(.+)"$/, "$1")
+    .replace(/^'(.+)'$/, "$1")
+    .trim();
+}
+
+// Pick the nicer display label for a merged row: prefer one that has a capital
+// letter (e.g. "Synergy" over "synergy"); otherwise keep what we have.
+function preferLabel(current, candidate) {
+  if (!current) return candidate;
+  if (/[A-Z]/.test(candidate) && !/[A-Z]/.test(current)) return candidate;
+  return current;
+}
+
+// One-time migration: regroup existing stats by the normalized key so duplicate
+// rows (whitespace / quote / case variants of the same call) merge into one. For
+// this first game a person can have marked a box at most once, so each present
+// person counts as 1. Returns { stats, labels }.
+export function mergeStats(stats) {
+  const out = {}, labels = {};
+  for (const [rawItem, byPlayer] of Object.entries(stats || {})) {
+    const label = displayItem(rawItem);
+    const key = label.toLowerCase();
+    if (STAT_SKIP.has(key)) continue;
+    if (!out[key]) out[key] = {};
+    labels[key] = preferLabel(labels[key], label);
+    for (const [pk, n] of Object.entries(byPlayer)) {
+      if (n > 0) out[key][pk] = 1;
     }
   }
-  return changed;
+  return { stats: out, labels };
 }
 
 function freshMarks() {
@@ -182,12 +213,19 @@ export class BingoRoom {
       // { itemText: { playerKey: count } } plus a key->display-name map.
       this.stats = (await this.ctx.storage.get("stats")) || {};
       this.statNames = (await this.ctx.storage.get("statNames")) || {};
+      // statLabels: { normalizedKey: prettyDisplayText } for the stats table.
+      this.statLabels = (await this.ctx.storage.get("statLabels")) || {};
       // contests: { targetKey: { index: [contesterKey, ...] } } for the current game.
       this.contests = (await this.ctx.storage.get("contests")) || {};
-      // One-time fix: clamp any double-counted stats to 1 per person per box.
-      if (!(await this.ctx.storage.get("statsDedupeV1"))) {
-        if (dedupeStats(this.stats)) await this.ctx.storage.put("stats", this.stats);
-        await this.ctx.storage.put("statsDedupeV1", true);
+      // One-time fix: merge duplicate stat rows (whitespace / quote / case
+      // variants of the same call) into one normalized row.
+      if (!(await this.ctx.storage.get("statsMergeV1"))) {
+        const merged = mergeStats(this.stats);
+        this.stats = merged.stats;
+        this.statLabels = merged.labels;
+        await this.ctx.storage.put("stats", this.stats);
+        await this.ctx.storage.put("statLabels", this.statLabels);
+        await this.ctx.storage.put("statsMergeV1", true);
       }
     });
   }
@@ -498,15 +536,18 @@ export class BingoRoom {
   // Adjust the lifetime count of how often `playerKey` has marked `item`.
   // delta is +1 (marked) or -1 (un-marked, e.g. a misclick correction).
   async recordStat(item, playerKey, name, delta) {
-    const text = String(item || "").trim();
-    if (!text || text === "FREE" || text === "—" || text === "(add more items)") return;
-    if (!this.stats[text]) this.stats[text] = {};
-    const next = Math.max(0, (this.stats[text][playerKey] || 0) + delta);
-    if (next === 0) delete this.stats[text][playerKey];
-    else this.stats[text][playerKey] = next;
-    if (Object.keys(this.stats[text]).length === 0) delete this.stats[text];
+    const label = displayItem(item);
+    const key = label.toLowerCase();
+    if (STAT_SKIP.has(key)) return;
+    if (!this.stats[key]) this.stats[key] = {};
+    const next = Math.max(0, (this.stats[key][playerKey] || 0) + delta);
+    if (next === 0) delete this.stats[key][playerKey];
+    else this.stats[key][playerKey] = next;
+    if (Object.keys(this.stats[key]).length === 0) { delete this.stats[key]; delete this.statLabels[key]; }
+    else this.statLabels[key] = preferLabel(this.statLabels[key], label);
     this.statNames[playerKey] = name;
     await this.ctx.storage.put("stats", this.stats);
+    await this.ctx.storage.put("statLabels", this.statLabels);
     await this.ctx.storage.put("statNames", this.statNames);
   }
 
@@ -527,6 +568,7 @@ export class BingoRoom {
       votes: this.votes,
       stats: this.stats,
       statNames: this.statNames,
+      statLabels: this.statLabels,
       contests: this.contests,
       ...(extra || {}),
     });

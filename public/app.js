@@ -309,6 +309,7 @@ function setTab(tab) {
 function renderStats(state) {
   const stats = state.stats || {};
   const names = state.statNames || {};
+  const labels = state.statLabels || {};
   const box = $("#stats-table");
   const items = Object.keys(stats);
   if (!items.length) {
@@ -331,7 +332,7 @@ function renderStats(state) {
   for (const k of playerKeys) h += `<th>${escapeHtml(names[k] || k)}</th>`;
   h += "<th class='tot'>Total</th></tr></thead><tbody>";
   for (const item of items) {
-    h += `<tr><td class="item">${escapeHtml(item)}</td>`;
+    h += `<tr><td class="item">${escapeHtml(labels[item] || item)}</td>`;
     for (const k of playerKeys) {
       const n = stats[item][k] || 0;
       h += `<td class="${n ? "" : "zero"}">${n || "·"}</td>`;
