@@ -146,23 +146,36 @@
       </div>
     </div>
 
-    <!-- Rules modal -->
-    <div id="rules-modal" class="modal" hidden>
-      <div class="modal-box modal-narrow">
-        <div class="modal-head">
-          <h2>How winning works</h2>
-          <button id="rules-close" class="link">Close</button>
-        </div>
-        <ol class="rules-list">
-          <li>Play continues until all planning meetings are completed.</li>
-          <li>If only one player gets Bingo, they win.</li>
-          <li>If several players get Bingo, the winner has the <b>most Bingos</b> (completed rows, columns, or diagonals).</li>
-          <li>If still tied, the winner has the <b>most marked squares</b> overall.</li>
-          <li>If still tied, it goes to an <b>offline tiebreaker</b>.</li>
-        </ol>
-        <p class="hint">The live odds and the Players order use these rules: most Bingos first, then most squares marked.</p>
-      </div>
+<!-- Rules modal -->
+<div id="rules-modal" class="modal" hidden>
+  <div class="modal-box modal-narrow">
+    <div class="modal-head">
+      <h2>How winning works</h2>
+      <button id="rules-close" class="link">Close</button>
     </div>
+
+    <h3>Winning</h3>
+    <ol class="rules-list">
+      <li>Play continues until all planning meetings are completed.</li>
+      <li>If only one player gets Bingo, they win.</li>
+      <li>If several players get Bingo, the winner has the <b>most Bingos</b> (completed rows, columns, or diagonals).</li>
+      <li>If still tied, the winner has the <b>most marked squares</b> overall.</li>
+      <li>If still tied, it goes to an <b>offline tiebreaker</b>.</li>
+    </ol>
+
+    <h3>Marking squares</h3>
+    <ul class="rules-list">
+      <li>You may only mark a square if you personally witnessed the event happen.</li>
+      <li>You must have been present in the meeting or breakout room when it occurred.</li>
+      <li>If something happened in a different breakout room that you were not in, it does <b>not</b> count for your card.</li>
+      <li>Hearing about an event from another player afterward does not make it eligible to mark.</li>
+    </ul>
+
+    <p class="hint">
+      The live odds and the Players order use these rules: most Bingos first, then most squares marked.
+    </p>
+  </div>
+</div>
 
     <!-- Import / enter your own card -->
     <div id="import-modal" class="modal" hidden>
