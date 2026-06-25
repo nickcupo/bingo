@@ -213,7 +213,12 @@ function connect() {
   ws.addEventListener("open", () => { setConn("ok", "connected"); sendJoin(); });
   ws.addEventListener("message", (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-    if (msg.type === "state") { lastState = msg; render(msg); if (msg.bingoBy) announceBingo(msg.bingoBy); }
+    if (msg.type === "state") {
+      lastState = msg;
+      render(msg);
+      if (msg.bingoBy) announceBingo(msg.bingoBy);
+      if (msg.nudgeTarget === myKey() && msg.nudgeBy) announceNudge(msg);
+    }
   });
   ws.addEventListener("close", (ev) => {
     setConn("bad", "reconnecting");
@@ -265,13 +270,14 @@ function cardTextSame(container, player) {
   return true;
 }
 function syncCell(cell, i, player, opts) {
-  const { interactive = false, contests = null, onCell = null } = opts;
+  const { interactive = false, contests = null, nudges = null, onCell = null } = opts;
   const isFree = i === 12;
   const marked = player.marks[i];
   const contestedBy = contests && contests[i] && contests[i].length ? contests[i] : null;
+  const nudgedBy = !marked && nudges && nudges[i] && nudges[i].length ? nudges[i] : null;
   const wasMarked = cell.classList.contains("marked");
 
-  cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "") + (contestedBy ? " contested" : "");
+  cell.className = "cell" + (isFree ? " free" : "") + (marked && !isFree ? " marked" : "") + (contestedBy ? " contested" : "") + (nudgedBy ? " nudged" : "");
 
   let t = cell.querySelector(".cell-text");
   if (!t) { t = document.createElement("span"); t.className = "cell-text"; cell.appendChild(t); }
@@ -296,6 +302,18 @@ function syncCell(cell, i, player, opts) {
     }
     flag.textContent = label;
   } else if (flag) flag.remove();
+
+  let nflag = cell.querySelector(".nudge-flag");
+  if (nudgedBy) {
+    const label = "👉" + (nudgedBy.length > 1 ? " " + nudgedBy.length : "");
+    if (!nflag) {
+      nflag = document.createElement("span");
+      nflag.className = "nudge-flag";
+      nflag.title = "Nudged — someone thinks you missed this";
+      cell.appendChild(nflag);
+    }
+    nflag.textContent = label;
+  } else if (nflag) nflag.remove();
 
   if (!cell.dataset.bound) {
     cell.dataset.bound = "1";
@@ -327,6 +345,20 @@ function contestsFor(state, key) {
   return out;
 }
 
+function nudgesFor(state, key) {
+  const raw = (state.nudges && state.nudges[key]) || {};
+  const out = {};
+  for (const [idx, keys] of Object.entries(raw)) {
+    out[Number(idx)] = keys.map((k) => (state.players[k] && state.players[k].name) || (state.statNames && state.statNames[k]) || k);
+  }
+  return out;
+}
+
+function nudgeCount(state, key) {
+  const raw = (state.nudges && state.nudges[key]) || {};
+  return Object.keys(raw).length;
+}
+
 function render(state) {
   $("#season-label").textContent = seasonText(state.season) + " game";
   const me = state.players[myKey()];
@@ -341,7 +373,23 @@ function render(state) {
       bingoEl.hidden = true;
       hadBingoBanner = false;
     }
-    buildCardInto(grid, me, { interactive: true, contests: contestsFor(state, myKey()) });
+    const myNudges = nudgeCount(state, myKey());
+    const nudgeEl = $("#my-nudges");
+    if (myNudges) {
+      const label = myNudges === 1 ? "1 nudge" : `${myNudges} nudges`;
+      nudgeEl.textContent = `${label} on your card — tap a highlighted square to mark it, or open your name in Players to dismiss.`;
+      if (nudgeEl.hidden) {
+        nudgeEl.hidden = false;
+        replayAnim(nudgeEl, "note-in");
+      }
+    } else {
+      nudgeEl.hidden = true;
+    }
+    buildCardInto(grid, me, {
+      interactive: true,
+      contests: contestsFor(state, myKey()),
+      nudges: nudgesFor(state, myKey()),
+    });
   } else grid.innerHTML = "<p class='muted'>Joining…</p>";
 
   // Starting a new game is admin-only and wipes everyone's cards — hide it otherwise.
@@ -568,12 +616,18 @@ function renderVerify() {
   if (p.bingo) { st.className = "verify-status ok"; st.textContent = `${bingos} bingo${bingos === 1 ? "" : "s"} · ${count}/24 marked. Confirm the line${bingos === 1 ? "" : "s"} below.`; }
   else { st.className = "verify-status"; st.textContent = `${count}/24 marked — no bingo yet.`; }
 
-  // On another player's board, tapping a marked square contests it.
-  $("#verify-contest-hint").hidden = isSelf;
+  // On another player's board: marked → contest, unmarked → nudge.
+  $("#verify-peer-hint").hidden = isSelf;
+  $("#verify-nudge-hint").hidden = !isSelf || !nudgeCount(lastState, verifyPid);
   buildCardInto($("#verify-card"), p, {
     contests: contestsFor(lastState, verifyPid),
-    onCell: isSelf ? null : (i, marked) => { if (marked) send({ type: "contest", playerId: verifyPid, index: i }); },
+    nudges: nudgesFor(lastState, verifyPid),
+    onCell: isSelf ? null : (i, marked) => {
+      if (marked) send({ type: "contest", playerId: verifyPid, index: i });
+      else send({ type: "nudge", playerId: verifyPid, index: i });
+    },
   });
+  renderVerifyNudges(p, isSelf);
   renderVerifyContests(p, me, isSelf);
 
   const actions = $("#verify-actions"); actions.innerHTML = "";
@@ -633,6 +687,38 @@ function renderVerify() {
       send({ type: "removePlayer", playerId: verifyPid }); closeVerify();
     });
     actions.appendChild(rm);
+  }
+}
+// Nudges on the viewed board — owner can mark (via the card) or dismiss.
+function renderVerifyNudges(p, isSelf) {
+  const box = $("#verify-nudges"); box.innerHTML = "";
+  const raw = (lastState.nudges && lastState.nudges[verifyPid]) || {};
+  const names = nudgesFor(lastState, verifyPid);
+  const idxs = Object.keys(raw).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) return;
+
+  const head = document.createElement("div");
+  head.className = "nudge-head";
+  head.textContent = `Nudges (${idxs.length})`;
+  box.appendChild(head);
+
+  for (const i of idxs) {
+    const row = document.createElement("div"); row.className = "nudge-row";
+    const inf = document.createElement("div"); inf.className = "nudge-info";
+    inf.innerHTML =
+      `<span class="nudge-sq">${escapeHtml(p.card[i] || "")}</span>` +
+      `<span class="nudge-by">nudged by ${names[i].map(escapeHtml).join(", ")}</span>`;
+    row.appendChild(inf);
+    if (isSelf) {
+      const acts = document.createElement("div"); acts.className = "nudge-actions";
+      const mark = document.createElement("button"); mark.className = "btn-outline btn-sm"; mark.textContent = "Mark it";
+      mark.addEventListener("click", () => send({ type: "toggle", index: i }));
+      const dis = document.createElement("button"); dis.className = "btn-outline btn-sm"; dis.textContent = "Dismiss";
+      dis.addEventListener("click", () => send({ type: "dismissNudge", index: i }));
+      acts.appendChild(mark); acts.appendChild(dis);
+      row.appendChild(acts);
+    }
+    box.appendChild(row);
   }
 }
 // List of contested squares on the viewed board, with resolve controls for the
@@ -749,6 +835,19 @@ function announceBingo(pid) {
   const p = lastState.players[pid]; if (!p) return;
   const el = $("#announce");
   el.textContent = `${p.name} called bingo. Select their name to verify the card.`;
+  el.hidden = false;
+  replayAnim(el, "announce-in");
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => { el.hidden = true; }, 12000);
+}
+function announceNudge(msg) {
+  if (!lastState) return;
+  const from = lastState.players[msg.nudgeBy];
+  const me = lastState.players[msg.nudgeTarget];
+  if (!from || !me) return;
+  const item = me.card[msg.nudgeIndex] || "a square";
+  const el = $("#announce");
+  el.textContent = `${from.name} nudged you about “${item}”.`;
   el.hidden = false;
   replayAnim(el, "announce-in");
   clearTimeout(announceTimer);

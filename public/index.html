@@ -83,6 +83,7 @@
             </div>
           </div>
           <div id="my-bingo" class="note note-win" hidden>You have bingo. Ask the group to verify your card.</div>
+          <div id="my-nudges" class="note note-nudge" hidden></div>
           <div id="card" class="grid"></div>
         </section>
 
@@ -136,8 +137,10 @@
           <button id="verify-close" class="link">Close</button>
         </div>
         <p id="verify-status" class="verify-status"></p>
-        <p id="verify-contest-hint" class="hint" hidden>Tap a marked square to contest it.</p>
+        <p id="verify-peer-hint" class="hint" hidden>Tap a marked square to contest it, or an unmarked one to nudge them.</p>
+        <p id="verify-nudge-hint" class="hint" hidden>Someone thinks you missed these — mark the square or dismiss below.</p>
         <div id="verify-card" class="grid verify-grid"></div>
+        <div id="verify-nudges"></div>
         <div id="verify-contests"></div>
         <div id="verify-actions" class="verify-actions"></div>
       </div>

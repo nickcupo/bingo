@@ -228,6 +228,9 @@ export class BingoRoom {
       this.statLabels = (await this.ctx.storage.get("statLabels")) || {};
       // contests: { targetKey: { index: [contesterKey, ...] } } for the current game.
       this.contests = (await this.ctx.storage.get("contests")) || {};
+      // nudges: { targetKey: { index: [nudgerKey, ...] } } — unmarked squares others
+      // think the owner should mark.
+      this.nudges = (await this.ctx.storage.get("nudges")) || {};
       // One-time fix: merge duplicate stat rows (quote / hyphen / spacing /
       // punctuation / case variants of the same call) into one canonical row.
       if (!(await this.ctx.storage.get("statsMergeV2"))) {
@@ -301,6 +304,10 @@ export class BingoRoom {
         if (!player.marks[i] && this.clearContest(pid, i)) {
           await this.ctx.storage.put("contests", this.contests);
         }
+        // Marking clears any nudge on that square.
+        if (player.marks[i] && this.clearNudge(pid, i)) {
+          await this.ctx.storage.put("nudges", this.nudges);
+        }
         this.broadcast(player.bingo && !wasBingo ? { bingoBy: pid } : null);
         return;
       }
@@ -332,6 +339,7 @@ export class BingoRoom {
         player.bingo = false;
         await this.persistPlayers();
         await this.dropContests(pid);
+        await this.dropNudges(pid);
         return this.broadcast();
       }
 
@@ -347,6 +355,7 @@ export class BingoRoom {
         player.bingo = false;
         await this.persistPlayers();
         await this.dropContests(pid);
+        await this.dropNudges(pid);
         return this.broadcast();
       }
 
@@ -357,6 +366,7 @@ export class BingoRoom {
         player.bingo = false;
         await this.persistPlayers();
         await this.dropContests(pid);
+        await this.dropNudges(pid);
         return this.broadcast();
       }
 
@@ -387,6 +397,7 @@ export class BingoRoom {
           delete this.players[target];
           if (this.votes[target]) { delete this.votes[target]; await this.ctx.storage.put("votes", this.votes); }
           if (this.contests[target]) { delete this.contests[target]; await this.ctx.storage.put("contests", this.contests); }
+          if (this.nudges[target]) { delete this.nudges[target]; await this.ctx.storage.put("nudges", this.nudges); }
           await this.persistPlayers();
         }
         return this.broadcast();
@@ -400,6 +411,7 @@ export class BingoRoom {
         this.season = season;
         this.votes = {};
         this.contests = {};
+        this.nudges = {};
         for (const p of Object.values(this.players)) {
           p.card = makeCard(this.items);
           p.marks = freshMarks();
@@ -408,6 +420,7 @@ export class BingoRoom {
         await this.ctx.storage.put("season", this.season);
         await this.ctx.storage.put("votes", this.votes);
         await this.ctx.storage.put("contests", this.contests);
+        await this.ctx.storage.put("nudges", this.nudges);
         await this.persistPlayers();
         return this.broadcast();
       }
@@ -481,6 +494,36 @@ export class BingoRoom {
         return this.broadcast();
       }
 
+      // Nudge an unmarked square on someone else's board (suggest they missed
+      // a call). Toggles the sender's nudge on that square.
+      case "nudge": {
+        const target = String(msg.playerId || "");
+        const i = Number(msg.index);
+        const tp = this.players[target];
+        if (!tp || !pid || target === pid) return;
+        if (!Number.isInteger(i) || i < 0 || i > 24 || i === 12) return;
+        if (tp.marks[i]) return;
+        const key = String(i);
+        if (!this.nudges[target]) this.nudges[target] = {};
+        const list = this.nudges[target][key] || [];
+        const at = list.indexOf(pid);
+        if (at >= 0) list.splice(at, 1);
+        else list.push(pid);
+        if (list.length) this.nudges[target][key] = list;
+        else this.clearNudge(target, i);
+        if (this.nudges[target] && Object.keys(this.nudges[target]).length === 0) delete this.nudges[target];
+        await this.ctx.storage.put("nudges", this.nudges);
+        return this.broadcast(at >= 0 ? null : { nudgeBy: pid, nudgeTarget: target, nudgeIndex: i });
+      }
+
+      // Dismiss a nudge on your own card without marking it.
+      case "dismissNudge": {
+        const i = Number(msg.index);
+        if (!pid || !Number.isInteger(i) || i < 0 || i > 24 || i === 12) return;
+        if (this.clearNudge(pid, i)) await this.ctx.storage.put("nudges", this.nudges);
+        return this.broadcast();
+      }
+
       // Resolve a contest. Only the card's owner or an admin may decide.
       // uphold=true un-marks the disputed square; either way the contest clears.
       case "resolveContest": {
@@ -533,6 +576,21 @@ export class BingoRoom {
     }
   }
 
+  clearNudge(targetKey, index) {
+    const bucket = this.nudges[targetKey];
+    if (!bucket || !(String(index) in bucket)) return false;
+    delete bucket[String(index)];
+    if (Object.keys(bucket).length === 0) delete this.nudges[targetKey];
+    return true;
+  }
+
+  async dropNudges(targetKey) {
+    if (this.nudges[targetKey]) {
+      delete this.nudges[targetKey];
+      await this.ctx.storage.put("nudges", this.nudges);
+    }
+  }
+
   // Adjust the lifetime count of how often `playerKey` has marked `item`.
   // delta is +1 (marked) or -1 (un-marked, e.g. a misclick correction).
   async recordStat(item, playerKey, name, delta) {
@@ -570,6 +628,7 @@ export class BingoRoom {
       statNames: this.statNames,
       statLabels: this.statLabels,
       contests: this.contests,
+      nudges: this.nudges,
       ...(extra || {}),
     });
     for (const ws of sockets) {

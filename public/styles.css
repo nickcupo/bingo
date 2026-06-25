@@ -185,6 +185,8 @@ button { cursor: pointer; }
 .note { border-radius: 8px; padding: .6rem .8rem; font-size: .88rem; margin-bottom: .8rem; }
 .note-win { background: var(--accent-weak); color: var(--accent); border: 1px solid #cfe0d5; }
 .note-win.note-in { animation: slide-down var(--dur-med) var(--ease-out); }
+.note-nudge { background: #f5f0e4; color: #7a6528; border: 1px solid #e0d4b8; }
+.note-nudge.note-in { animation: slide-down var(--dur-med) var(--ease-out); }
 
 /* ---------- bingo grid ---------- */
 .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem; }
@@ -208,9 +210,14 @@ button { cursor: pointer; }
 .cell.free:hover { border-color: var(--line-strong); }
 .cell.marked { background: var(--accent-weak); border-color: var(--accent); }
 .cell.contested { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
+.cell.nudged { border-color: #c08a2e; box-shadow: inset 0 0 0 1px #c08a2e; background: #faf6ee; }
 .cell .contest-flag {
   position: absolute; top: 2px; right: 3px; z-index: 3;
   font-size: .62rem; line-height: 1; color: var(--danger); font-weight: 700;
+}
+.cell .nudge-flag {
+  position: absolute; top: 2px; right: 3px; z-index: 3;
+  font-size: .62rem; line-height: 1; color: #a07a1a; font-weight: 700;
 }
 .cell .cell-text { position: relative; z-index: 2; }
 /* Keep the square text legible over a busy image stamp. */
@@ -366,17 +373,18 @@ table.stats { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
 .verify-grid .cell:hover { border-color: var(--line-strong); }
 .verify-grid .cell.free:hover { border-color: var(--line-strong); }
 /* contests list in the verify modal */
+#verify-nudges:not(:empty) { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; }
 #verify-contests:not(:empty) { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; }
-.contest-head { font-weight: 600; font-size: .9rem; margin-bottom: .5rem; }
-.contest-row {
+.contest-head, .nudge-head { font-weight: 600; font-size: .9rem; margin-bottom: .5rem; }
+.contest-row, .nudge-row {
   display: flex; align-items: center; justify-content: space-between; gap: .6rem;
   padding: .5rem 0; border-top: 1px solid var(--line); flex-wrap: wrap;
 }
-.contest-row:first-of-type { border-top: none; }
-.contest-info { min-width: 0; }
-.contest-sq { font-weight: 500; }
-.contest-by { display: block; font-size: .78rem; color: var(--muted); }
-.contest-actions { display: flex; gap: .5rem; flex: none; }
+.contest-row:first-of-type, .nudge-row:first-of-type { border-top: none; }
+.contest-info, .nudge-info { min-width: 0; }
+.contest-sq, .nudge-sq { font-weight: 500; }
+.contest-by, .nudge-by { display: block; font-size: .78rem; color: var(--muted); }
+.contest-actions, .nudge-actions { display: flex; gap: .5rem; flex: none; }
 .danger-outline { color: var(--danger); border-color: var(--danger); }
 .danger-outline:hover { background: var(--danger); color: #fff; }
 
