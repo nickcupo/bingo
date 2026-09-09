@@ -79,17 +79,23 @@
 
       <main class="layout">
         <section class="card-col">
-          <div class="head">
-            <h2>Your card</h2>
-            <div class="head-actions">
-              <button id="btn-clear" class="link">Clear marks</button>
-              <button id="btn-import-card" class="link">Enter my card</button>
-              <button id="btn-new-card" class="link">New card</button>
-            </div>
+          <div id="no-game" class="no-game" hidden>
+            <h2>No game in progress</h2>
+            <p class="muted">The last game has ended. An admin will start the next quarterly game.</p>
           </div>
-          <div id="my-bingo" class="note note-win" hidden>You have bingo. Ask the group to verify your card.</div>
-          <div id="my-nudges" class="note note-nudge" hidden></div>
-          <div id="card" class="grid"></div>
+          <div id="card-area">
+            <div class="head">
+              <h2>Your card</h2>
+              <div class="head-actions">
+                <button id="btn-clear" class="link">Clear marks</button>
+                <button id="btn-import-card" class="link">Enter my card</button>
+                <button id="btn-new-card" class="link">New card</button>
+              </div>
+            </div>
+            <div id="my-bingo" class="note note-win" hidden>You have bingo. Ask the group to verify your card.</div>
+            <div id="my-nudges" class="note note-nudge" hidden></div>
+            <div id="card" class="grid"></div>
+          </div>
         </section>
 
         <aside class="side">
@@ -102,7 +108,7 @@
           <section class="panel">
             <div class="head">
               <h2>Hall of Fame</h2>
-              <button id="btn-new-game" class="link">Start new game</button>
+              <button id="btn-new-game" class="link">Season…</button>
             </div>
             <div id="winners"></div>
           </section>
@@ -205,10 +211,9 @@
     <div id="newgame-modal" class="modal" hidden>
       <div class="modal-box modal-narrow">
         <div class="modal-head">
-          <h2>Start a new game</h2>
+          <h2>Season</h2>
           <button id="newgame-close" class="link">Cancel</button>
         </div>
-        <p class="hint">This deals fresh cards to everyone and clears all marks.</p>
         <div class="field">
           <span>Quarter</span>
           <select id="newgame-term">
@@ -216,7 +221,14 @@
           </select>
         </div>
         <label class="field"><span>Year</span><input id="newgame-year" type="number" min="2000" max="3000" /></label>
-        <button id="newgame-confirm" class="btn">Start game</button>
+        <button id="setseason-confirm" class="btn-outline">Set season only — keep everyone's cards</button>
+        <p class="hint">Fixes the label if the quarter is wrong. No cards or marks change.</p>
+        <hr class="modal-sep" />
+        <button id="newgame-confirm" class="btn">Start new game — fresh cards</button>
+        <p class="hint">Deals a new card to everyone and clears all marks. For starting a fresh quarterly game.</p>
+        <hr class="modal-sep" />
+        <button id="endgame-confirm" class="btn-outline danger-outline">End current game — no game in progress</button>
+        <p class="hint">Marks the current game as over. Nobody can mark squares until a new game is started. Cards and Hall of Fame are kept.</p>
       </div>
     </div>
 

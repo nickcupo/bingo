@@ -226,7 +226,11 @@ export class BingoRoom {
         this.players = migrated.players;
         await this.ctx.storage.put("players", this.players);
       }
-      this.season = (await this.ctx.storage.get("season")) || currentSeason();
+      // Pin the season the first time so the label doesn't silently follow the
+      // real-world calendar quarter (it should only change when an admin says so).
+      const storedSeason = await this.ctx.storage.get("season");
+      this.season = storedSeason || currentSeason();
+      if (!storedSeason) await this.ctx.storage.put("season", this.season);
       this.winners = (await this.ctx.storage.get("winners")) || [];
       // votes: { candidateKey: [approverKey, ...] } for the current game.
       this.votes = (await this.ctx.storage.get("votes")) || {};
@@ -241,6 +245,12 @@ export class BingoRoom {
       // nudges: { targetKey: { index: [nudgerKey, ...] } } — unmarked squares others
       // think the owner should mark.
       this.nudges = (await this.ctx.storage.get("nudges")) || {};
+      // Whether a game is currently running. When false, nobody can mark squares
+      // ("no game in progress" until an admin starts the next one). Existing rooms
+      // default to active so a live game isn't interrupted by the upgrade.
+      const storedActive = await this.ctx.storage.get("gameActive");
+      this.gameActive = storedActive === undefined ? true : storedActive;
+      if (storedActive === undefined) await this.ctx.storage.put("gameActive", this.gameActive);
       // One-time fix: merge duplicate stat rows (quote / hyphen / spacing /
       // punctuation / case variants of the same call) into one canonical row.
       if (!(await this.ctx.storage.get("statsMergeV2"))) {
@@ -309,6 +319,7 @@ export class BingoRoom {
       }
 
       case "toggle": {
+        if (!this.gameActive) return; // no game in progress
         const player = this.players[pid];
         if (!player) return;
         const i = Number(msg.index);
@@ -350,6 +361,7 @@ export class BingoRoom {
       }
 
       case "newCard": {
+        if (!this.gameActive) return;
         const player = this.players[pid];
         if (!player) return;
         player.card = makeCard(this.items);
@@ -363,6 +375,7 @@ export class BingoRoom {
 
       // Replace your card with one you typed in (e.g. an existing printed card).
       case "setCard": {
+        if (!this.gameActive) return;
         const player = this.players[pid];
         if (!player) return;
         if (!Array.isArray(msg.card) || msg.card.length !== 25) return;
@@ -378,6 +391,7 @@ export class BingoRoom {
       }
 
       case "clearMarks": {
+        if (!this.gameActive) return;
         const player = this.players[pid];
         if (!player) return;
         player.marks = freshMarks();
@@ -427,6 +441,7 @@ export class BingoRoom {
         const season = cleanSeason(msg.season);
         if (!season || !ADMINS.has(pid)) return;
         this.season = season;
+        this.gameActive = true;
         this.votes = {};
         this.contests = {};
         this.nudges = {};
@@ -436,10 +451,31 @@ export class BingoRoom {
           p.bingo = false;
         }
         await this.ctx.storage.put("season", this.season);
+        await this.ctx.storage.put("gameActive", true);
         await this.ctx.storage.put("votes", this.votes);
         await this.ctx.storage.put("contests", this.contests);
         await this.ctx.storage.put("nudges", this.nudges);
         await this.persistPlayers();
+        return this.broadcast();
+      }
+
+      // End the current game: no game in progress until a new one is started.
+      // Admin-only. Keeps cards, marks, winners, and stats as they are.
+      case "endGame": {
+        if (!ADMINS.has(pid)) return;
+        this.gameActive = false;
+        await this.ctx.storage.put("gameActive", false);
+        return this.broadcast();
+      }
+
+      // Correct the season label only — keeps all cards, marks, and progress.
+      // Admin-only. Use this when the displayed quarter is wrong but you did NOT
+      // start a fresh game.
+      case "setSeason": {
+        const season = cleanSeason(msg.season);
+        if (!season || !ADMINS.has(pid)) return;
+        this.season = season;
+        await this.ctx.storage.put("season", this.season);
         return this.broadcast();
       }
 
@@ -640,6 +676,7 @@ export class BingoRoom {
       players: this.players,
       online: [...online],
       season: this.season,
+      gameActive: this.gameActive,
       winners: this.winners,
       votes: this.votes,
       stats: this.stats,

@@ -392,7 +392,10 @@ function nudgeCount(state, key) {
 }
 
 function render(state) {
-  $("#season-label").textContent = seasonText(state.season) + " game";
+  const active = state.gameActive !== false;
+  $("#season-label").textContent = active ? seasonText(state.season) + " game" : "No game in progress";
+  $("#no-game").hidden = active;
+  $("#card-area").hidden = !active;
   const me = state.players[myKey()];
   const grid = $("#card");
   if (me) {
@@ -532,7 +535,7 @@ function computeOdds(state) {
   return scored;
 }
 
-function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew) {
+function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew, active) {
   const pct = Math.round((x.pct || 0) * 100);
   const bingos = x.bingos || 0;
   row.className = "player" + (isOnline ? "" : " offline") + (isNew ? " player-new" : "");
@@ -547,10 +550,10 @@ function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew) {
   setHTML(left,
     `<div class="pname"><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.name)}` +
     (isMe ? '<span class="tag">you</span>' : "") +
-    (bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
+    (active && bingos > 0 ? `<span class="winflag">${bingos} bingo${bingos === 1 ? "" : "s"}</span>` : "") +
     (p.name === winnerName ? '<span class="winflag">winner</span>' : "") +
-    `<span class="podds" title="Estimated odds to win">${pct}%</span></div>` +
-    `<div class="pmeta">${(x.marked || 1) - 1}/24 marked${isOnline ? "" : " · offline"}</div>`);
+    (active ? `<span class="podds" title="Estimated odds to win">${pct}%</span>` : "") + `</div>` +
+    `<div class="pmeta">${active ? `${(x.marked || 1) - 1}/24 marked` : "in the game"}${isOnline ? "" : " · offline"}</div>`);
 
   let mini = row.querySelector(".mini");
   if (!mini) {
@@ -571,8 +574,9 @@ function updatePlayerRow(row, pid, p, x, isOnline, isMe, winnerName, isNew) {
 }
 
 function renderPlayers(state) {
+  const active = state.gameActive !== false;
   const online = new Set(state.online || []);
-  const winnerName = winnerFor(state, state.season);
+  const winnerName = active ? winnerFor(state, state.season) : null;
   const info = {};
   for (const x of computeOdds(state)) info[x.key] = x;
   const entries = Object.entries(state.players);
@@ -597,7 +601,7 @@ function renderPlayers(state) {
     let row = existing.get(pid);
     const isNew = !knownPlayers.has(pid);
     if (!row) row = document.createElement("div");
-    updatePlayerRow(row, pid, p, info[pid] || { pct: 0, bingos: 0, marked: 1 }, online.has(pid), pid === myKey(), winnerName, isNew);
+    updatePlayerRow(row, pid, p, info[pid] || { pct: 0, bingos: 0, marked: 1 }, online.has(pid), pid === myKey(), winnerName, isNew, active);
     if (isNew) knownPlayers.add(pid);
     desired.push(row);
   }
@@ -618,21 +622,28 @@ function winnerFor(state, season) {
 
 function renderWinners(state) {
   const box = $("#winners");
+  const active = state.gameActive !== false;
   const cur = state.season;
-  const curWinner = winnerFor(state, cur);
-  const past = (state.winners || [])
-    .filter((w) => !(w.term === cur.term && w.year === cur.year))
-    .sort((a, b) => b.year - a.year || (b.at || 0) - (a.at || 0));
+  const byRecent = (a, b) => b.year - a.year || (b.at || 0) - (a.at || 0);
 
-  let html = `<div class="season-now"><span class="s-name">${seasonText(cur)}</span>`;
-  html += curWinner ? `<span class="s-win">${escapeHtml(curWinner)}</span>` : `<span class="s-open">in progress</span>`;
-  html += `</div>`;
-  if (past.length) {
+  let html, list;
+  if (active) {
+    const curWinner = winnerFor(state, cur);
+    html = `<div class="season-now"><span class="s-name">${seasonText(cur)}</span>`;
+    html += curWinner ? `<span class="s-win">${escapeHtml(curWinner)}</span>` : `<span class="s-open">in progress</span>`;
+    html += `</div>`;
+    list = (state.winners || []).filter((w) => !(w.term === cur.term && w.year === cur.year)).sort(byRecent);
+  } else {
+    // No game running — show every recorded winner, no "in progress" line.
+    html = `<div class="season-now"><span class="s-open">No game in progress</span></div>`;
+    list = (state.winners || []).slice().sort(byRecent);
+  }
+  if (list.length) {
     html += "<ul class='wlist'>";
-    for (const w of past) html += `<li><span>${escapeHtml(w.name)}</span><span class="w-season">${seasonText(w)}</span></li>`;
+    for (const w of list) html += `<li><span>${escapeHtml(w.name)}</span><span class="w-season">${seasonText(w)}</span></li>`;
     html += "</ul>";
   } else {
-    html += "<p class='wempty'>No past winners recorded yet.</p>";
+    html += "<p class='wempty'>No winners recorded yet.</p>";
   }
   setHTML(box, html);
 }
@@ -825,6 +836,17 @@ $("#newgame-confirm").addEventListener("click", () => {
   const season = { term: $("#newgame-term").value, year: Number($("#newgame-year").value) };
   if (!confirm(`Start the ${seasonText(season)} game? Everyone gets a new card and all marks are cleared.`)) return;
   send({ type: "newGame", season });
+  $("#newgame-modal").hidden = true;
+});
+$("#setseason-confirm").addEventListener("click", () => {
+  const season = { term: $("#newgame-term").value, year: Number($("#newgame-year").value) };
+  if (!confirm(`Set the season label to ${seasonText(season)}? Cards and marks stay exactly as they are.`)) return;
+  send({ type: "setSeason", season });
+  $("#newgame-modal").hidden = true;
+});
+$("#endgame-confirm").addEventListener("click", () => {
+  if (!confirm("End the current game? No one will be able to mark squares until a new game is started. Cards and the Hall of Fame are kept.")) return;
+  send({ type: "endGame" });
   $("#newgame-modal").hidden = true;
 });
 document.addEventListener("keydown", (e) => {

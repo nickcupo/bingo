@@ -372,6 +372,14 @@ table.stats { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
 }
 .modal:not([hidden]) .modal-box { animation: rise-in var(--dur-med) var(--ease-out); }
 .modal-narrow { max-width: 360px; display: flex; flex-direction: column; gap: .9rem; }
+.modal-sep { border: none; border-top: 1px solid var(--line); margin: .2rem 0; width: 100%; }
+
+.no-game {
+  border: 1px dashed var(--line-strong); border-radius: 12px;
+  padding: 2.5rem 1.5rem; text-align: center; background: var(--surface);
+}
+.no-game h2 { font-family: var(--serif); font-size: 1.4rem; margin-bottom: .4rem; }
+.no-game p { margin: 0; max-width: 32ch; margin-inline: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
 .modal-head h2 { font-family: var(--serif); font-size: 1.25rem; }
 .verify-status { margin: 0 0 .9rem; font-size: .9rem; }
