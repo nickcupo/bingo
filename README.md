@@ -16,7 +16,7 @@ free plan.
 ## Features
 
 - Shared password to get in.
-- Everyone picks a name and a stamp (a character, an emoji, or an uploaded image).
+- Everyone picks a name and a stamp: a character, an emoji, or an image they upload.
 - Each player gets their own random 5×5 card (free center square) — or imports an
   existing card via **Enter my card**.
 - A shared item list **anyone can edit**; cards are generated from it.
@@ -31,8 +31,8 @@ free plan.
   recorded winner per quarter and a running history.
 - **Stats tab**: how often each person has marked each item, across all games (the
   foundation for smarter, per-person odds later).
-- Removing other players is restricted to admins (`Nick`, `Lauryn` — see
-  [Configuration](#configuration)).
+- Removing other players, starting a new game, and undoing a winner are admin-only
+  (see [Configuration](#configuration)).
 
 ---
 
@@ -41,7 +41,7 @@ free plan.
 Prereqs: **Node 18+** and npm. (Wrangler, the Cloudflare CLI, comes in via `npm install`.)
 
 ```bash
-git clone https://github.com/nrc2358/bingo.git
+git clone https://github.com/nickcupo/bingo.git
 cd bingo
 npm install
 cp .dev.vars.example .dev.vars   # sets the local password
@@ -92,9 +92,10 @@ how to add a feature — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - **Password** — `SITE_PASSWORD`. Local: `.dev.vars`. Production: a Wrangler secret
   (`npx wrangler secret put SITE_PASSWORD`). A secret overrides any value in config.
-- **Admins** (who may remove other players) — the `ADMINS` set, defined in **both**
-  `src/bingo-room.js` (enforced server-side) and `public/app.js` (controls the button).
-  Names are normalized (trimmed + lower-cased). Update both places to change it.
+- **Admins** (who may remove other players, start games, undo winners) — the `ADMINS`
+  set, defined in **both** `src/bingo-room.js` (enforced server-side) and `public/app.js`
+  (controls the buttons). Ships as `["admin"]`; put your own names in, lower-cased, in
+  both places.
 - **Approvals needed to declare a winner** — `APPROVALS_NEEDED` in `src/bingo-room.js`
   (default `2`).
 - **Default bingo items** — `DEFAULT_ITEMS` in `src/bingo-room.js` (also editable live

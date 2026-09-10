@@ -217,7 +217,7 @@ There's no test framework; testing is lightweight and deliberate.
   ```bash
   node --input-type=module -e "
     import { rekeyByName } from './src/bingo-room.js';
-    console.log(rekeyByName({ 'rand-id': { name:'Nick', marks:[], card:[] } }));
+    console.log(rekeyByName({ 'rand-id': { name:'Alice', marks:[], card:[] } }));
   "
   ```
   Currently exported for testing: `rekeyByName`, `mergeStats`. Add more as needed.

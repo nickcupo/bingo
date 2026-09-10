@@ -63,7 +63,9 @@ function cleanSeason(s) {
 }
 
 // Only these names (normalized) may remove other players.
-const ADMINS = new Set(["nick", "lauryn"]);
+// Names allowed to remove players, start games, and undo winners. Lower-case.
+// Must match the ADMINS set in public/app.js.
+const ADMINS = new Set(["admin"]);
 // Approvals required before a winner is officially declared.
 const APPROVALS_NEEDED = 2;
 
@@ -106,7 +108,7 @@ function makeCard(items) {
 }
 
 // Accept a small data-URL image (client resizes before sending) or a
-// same-origin asset path like "/stamps/horton.png". Returns the string, or
+// same-origin asset path like "/stamps/marker.png". Returns the string, or
 // null if invalid, so the broadcast payload stays light.
 function cleanStampImg(v) {
   if (typeof v !== "string") return null;

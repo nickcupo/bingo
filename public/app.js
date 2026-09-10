@@ -56,16 +56,15 @@ const STAMPS = ["✓", "●", "★", "◆", "▲", "✕"];
 // any device. Must match the server's normalization: trim + lowercase.
 function myKey() { return myName.trim().toLowerCase(); }
 // Only these names may remove players, start a new game, or undo a winner.
-const ADMINS = new Set(["nick", "lauryn"]);
+// Change these to the names of the people who run your game. Lower-case.
+const ADMINS = new Set(["admin"]);
 function isAdmin() { return ADMINS.has(myKey()); }
 let token = store.get("token");
-const DEFAULT_STAMP_IMG = "/stamps/horton.png";
 let myName = store.get("name") || "";
 let myStamp = store.get("stamp") || "✓";
-// New players default to the image marker. "none" means the player explicitly
-// chose a text/emoji stamp instead, so we don't force the image back on them.
+// A player may upload their own marker image; "none" (or nothing) means a text/emoji stamp.
 const _storedImg = store.get("stampImg");
-let myStampImg = _storedImg === null ? DEFAULT_STAMP_IMG : (_storedImg === "none" ? null : _storedImg);
+let myStampImg = _storedImg === null || _storedImg === "none" ? null : _storedImg;
 let ws = null;
 let lastState = null;
 let listDirty = false;
@@ -102,24 +101,6 @@ $("#login-form").addEventListener("submit", async (e) => {
 function buildStampPicker() {
   const wrap = $("#stamp-picker");
   wrap.innerHTML = "";
-
-  // The default image marker as the first option.
-  const imgBtn = document.createElement("button");
-  imgBtn.type = "button";
-  imgBtn.className = "stamp-opt-img";
-  imgBtn.title = "Default marker";
-  const thumb = document.createElement("img");
-  thumb.src = DEFAULT_STAMP_IMG; thumb.alt = "default marker";
-  imgBtn.appendChild(thumb);
-  if (myStampImg === DEFAULT_STAMP_IMG) imgBtn.classList.add("selected");
-  imgBtn.addEventListener("click", () => {
-    myStampImg = DEFAULT_STAMP_IMG;
-    store.set("stampImg", DEFAULT_STAMP_IMG);
-    $("#stamp-custom").value = "";
-    showStampPreview(DEFAULT_STAMP_IMG);
-    for (const el of wrap.children) el.classList.toggle("selected", el === imgBtn);
-  });
-  wrap.appendChild(imgBtn);
 
   for (const s of STAMPS) {
     const b = document.createElement("button");
@@ -723,7 +704,7 @@ function renderVerify() {
     actions.appendChild(note);
   }
 
-  // Remove / leave. Only Nick and Lauryn can remove other players.
+  // Remove / leave. Only admins can remove other players.
   if (isSelf) {
     const rm = document.createElement("button"); rm.className = "link link-danger"; rm.textContent = "Leave the game";
     rm.addEventListener("click", () => {
