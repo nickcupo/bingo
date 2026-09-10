@@ -77,7 +77,7 @@ constructor, written back on change):
 Player = {
   name,            // display name as entered
   stamp,           // emoji/character (≤ 8 chars)
-  stampImg,        // data: URL or same-origin path like "/stamps/horton.png", or null
+  stampImg,        // data: URL of an uploaded marker image, or null
   color,           // assigned from COLORS
   card,            // string[25], index 12 is always "FREE"
   marks,           // boolean[25], index 12 starts true (free square)

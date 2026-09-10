@@ -69,7 +69,7 @@ bingo/
    ├─ index.html
    ├─ app.js             # all client logic
    ├─ styles.css
-   └─ stamps/horton.png  # default stamp image
+
 ```
 
 | File | Role |
