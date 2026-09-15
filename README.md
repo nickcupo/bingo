@@ -4,6 +4,8 @@ A small, self-hostable multiplayer bingo game for meetings — no numbers, just 
 things people say and do on calls. One shared password, everyone gets their own card
 from a shared list, and you can watch everyone's progress live.
 
+The writeup, with how it is built and why: [nickcupo.com/projects/meeting-bingo](https://nickcupo.com/projects/meeting-bingo).
+
 **Stack:** Cloudflare Workers + Durable Objects (SQLite) + native WebSockets, with a
 plain vanilla HTML/CSS/JS front end. No build step, no framework. Runs on Cloudflare's
 free plan.
