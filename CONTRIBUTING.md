@@ -121,8 +121,10 @@ A single message type:
 {
   type: "state",
   items, players, online,        // online: array of currently-connected player keys
-  season, winners, votes,
-  stats, statLabels, statNames, contests,
+  season, gameActive,            // gameActive: false = "no game in progress"
+  winners, votes,
+  adminNames,                    // from ADMIN_NAMES; clients use it to show admin controls
+  stats, statLabels, statNames, contests, nudges,
   bingoBy?,                      // present once when a player just reached bingo (for the banner)
   winnerDeclared?,               // present once when approvals just declared a winner
 }
@@ -135,8 +137,13 @@ There is no partial/delta update — clients always render from the full snapsho
 - **Identity = normalized name.** A player's key is `name.trim().toLowerCase()`. The same
   function exists on both sides: `myKey()` in `app.js`, inline in the DO's `join`. This is
   why re-entering the same name on any device restores your card. Keep the two in sync.
-- **Admins** are the `ADMINS` set, defined in **both** `bingo-room.js` (enforced) and
-  `app.js` (UI). Change both.
+- **Admins** come from the `ADMIN_NAMES` env var, parsed once in the DO constructor
+  (`this.admins`) and enforced there. The DO broadcasts them as `adminNames`, and the
+  client rebuilds its `ADMINS` set from each state update — so there is one source of
+  truth, and no names live in the source.
+- **Instance config** that must stay out of the public repo (admin names, a default
+  stamp image) goes in Worker secrets / `.dev.vars` and git-ignored `public/stamps/`.
+  `GET /api/config` exposes only the non-sensitive default-stamp path to the client.
 - **Broadcast on every change.** After mutating state and persisting, call `broadcast()`.
 - **Persist before broadcasting.** Write to `ctx.storage` so a later eviction can't lose it.
 - **Additive, backward-compatible state.** New state keys must default sensibly when absent

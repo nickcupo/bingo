@@ -62,10 +62,17 @@ function cleanSeason(s) {
   return { term: s.term, year };
 }
 
-// Only these names (normalized) may remove other players.
-// Names allowed to remove players, start games, and undo winners. Lower-case.
-// Must match the ADMINS set in public/app.js.
-const ADMINS = new Set(["admin"]);
+// Admins may remove players, start/end games, set the season, and undo winners.
+// Configure with the ADMIN_NAMES Worker variable or secret — comma-separated
+// names, e.g. "alex,sam" (case-insensitive). Falls back to a single "admin"
+// account when unset. The list is sent to clients so they can show admin controls.
+function parseAdmins(raw) {
+  const names = String(raw || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(names.length ? names : ["admin"]);
+}
 // Approvals required before a winner is officially declared.
 const APPROVALS_NEEDED = 2;
 
@@ -220,6 +227,7 @@ export class BingoRoom {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    this.admins = parseAdmins(env.ADMIN_NAMES);
     this.ctx.blockConcurrencyWhile(async () => {
       this.items = (await this.ctx.storage.get("items")) || DEFAULT_ITEMS;
       this.players = (await this.ctx.storage.get("players")) || {};
@@ -426,7 +434,7 @@ export class BingoRoom {
         const target = String(msg.playerId || "");
         if (!target) return;
         // You may always remove yourself; only admins may remove others.
-        if (target !== pid && !ADMINS.has(pid)) return;
+        if (target !== pid && !this.admins.has(pid)) return;
         if (this.players[target]) {
           delete this.players[target];
           if (this.votes[target]) { delete this.votes[target]; await this.ctx.storage.put("votes", this.votes); }
@@ -441,7 +449,7 @@ export class BingoRoom {
       // Admin-only — this clears everyone's cards and marks.
       case "newGame": {
         const season = cleanSeason(msg.season);
-        if (!season || !ADMINS.has(pid)) return;
+        if (!season || !this.admins.has(pid)) return;
         this.season = season;
         this.gameActive = true;
         this.votes = {};
@@ -464,7 +472,7 @@ export class BingoRoom {
       // End the current game: no game in progress until a new one is started.
       // Admin-only. Keeps cards, marks, winners, and stats as they are.
       case "endGame": {
-        if (!ADMINS.has(pid)) return;
+        if (!this.admins.has(pid)) return;
         this.gameActive = false;
         await this.ctx.storage.put("gameActive", false);
         return this.broadcast();
@@ -475,7 +483,7 @@ export class BingoRoom {
       // start a fresh game.
       case "setSeason": {
         const season = cleanSeason(msg.season);
-        if (!season || !ADMINS.has(pid)) return;
+        if (!season || !this.admins.has(pid)) return;
         this.season = season;
         await this.ctx.storage.put("season", this.season);
         return this.broadcast();
@@ -517,7 +525,7 @@ export class BingoRoom {
       // Remove a declared winner and reopen voting for that season. Admin-only.
       case "clearWinner": {
         const season = cleanSeason(msg.season);
-        if (!season || !ADMINS.has(pid)) return;
+        if (!season || !this.admins.has(pid)) return;
         this.winners = this.winners.filter(
           (w) => !(w.term === season.term && w.year === season.year),
         );
@@ -587,7 +595,7 @@ export class BingoRoom {
         const i = Number(msg.index);
         const tp = this.players[target];
         if (!tp || !pid) return;
-        if (pid !== target && !ADMINS.has(pid)) return;
+        if (pid !== target && !this.admins.has(pid)) return;
         if (!Number.isInteger(i) || i < 0 || i > 24 || i === 12) return;
         if (msg.uphold && tp.marks[i]) {
           tp.marks[i] = false;
@@ -679,6 +687,7 @@ export class BingoRoom {
       online: [...online],
       season: this.season,
       gameActive: this.gameActive,
+      adminNames: [...this.admins],
       winners: this.winners,
       votes: this.votes,
       stats: this.stats,

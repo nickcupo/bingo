@@ -46,6 +46,16 @@ export default {
       return json({ ok: false, error: "wrong password" }, 401);
     }
 
+    // --- Client config: optional default stamp image (DEFAULT_STAMP_IMG) ---
+    // A same-origin path like "/stamps/marker.png" or a data: image URL. Unset by
+    // default, in which case players start with a text stamp.
+    if (url.pathname === "/api/config") {
+      const raw = String(env.DEFAULT_STAMP_IMG || "").trim();
+      const ok = /^\/(?!\/)[\w\-./]{1,200}$/.test(raw) && !raw.includes("..") ||
+        raw.startsWith("data:image/");
+      return json({ defaultStampImg: ok ? raw : null });
+    }
+
     // --- WebSocket (real-time game) and roster (returning-player names) ---
     if (url.pathname === "/ws" || url.pathname === "/api/roster") {
       const token = url.searchParams.get("token") || "";

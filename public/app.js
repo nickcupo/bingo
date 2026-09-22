@@ -55,14 +55,18 @@ const STAMPS = ["✓", "●", "★", "◆", "▲", "✕"];
 // Identity is your name (normalized), so the same name gets the same card on
 // any device. Must match the server's normalization: trim + lowercase.
 function myKey() { return myName.trim().toLowerCase(); }
-// Only these names may remove players, start a new game, or undo a winner.
-// Change these to the names of the people who run your game. Lower-case.
-const ADMINS = new Set(["admin"]);
+// Admins (who may remove players, start/end games, or undo a winner) come from
+// the server's ADMIN_NAMES setting, delivered with each state update.
+let ADMINS = new Set();
 function isAdmin() { return ADMINS.has(myKey()); }
 let token = store.get("token");
 let myName = store.get("name") || "";
 let myStamp = store.get("stamp") || "✓";
-// A player may upload their own marker image; "none" (or nothing) means a text/emoji stamp.
+// Optional default image stamp from the server's DEFAULT_STAMP_IMG setting
+// (loaded from /api/config). null means players start with a text stamp.
+let DEFAULT_STAMP_IMG = null;
+// "none" means the player explicitly chose a text/emoji stamp, so we never force
+// the default image back on them; nothing stored means they haven't chosen yet.
 const _storedImg = store.get("stampImg");
 let myStampImg = _storedImg === null || _storedImg === "none" ? null : _storedImg;
 let ws = null;
@@ -101,6 +105,26 @@ $("#login-form").addEventListener("submit", async (e) => {
 function buildStampPicker() {
   const wrap = $("#stamp-picker");
   wrap.innerHTML = "";
+
+  // The configured default image marker, if any, as the first option.
+  if (DEFAULT_STAMP_IMG) {
+    const imgBtn = document.createElement("button");
+    imgBtn.type = "button";
+    imgBtn.className = "stamp-opt-img";
+    imgBtn.title = "Default marker";
+    const thumb = document.createElement("img");
+    thumb.src = DEFAULT_STAMP_IMG; thumb.alt = "default marker";
+    imgBtn.appendChild(thumb);
+    if (myStampImg === DEFAULT_STAMP_IMG) imgBtn.classList.add("selected");
+    imgBtn.addEventListener("click", () => {
+      myStampImg = DEFAULT_STAMP_IMG;
+      store.set("stampImg", DEFAULT_STAMP_IMG);
+      $("#stamp-custom").value = "";
+      showStampPreview(DEFAULT_STAMP_IMG);
+      for (const el of wrap.children) el.classList.toggle("selected", el === imgBtn);
+    });
+    wrap.appendChild(imgBtn);
+  }
 
   for (const s of STAMPS) {
     const b = document.createElement("button");
@@ -207,8 +231,17 @@ function gotoNameOrGame() {
   if (myName) startGame();
   else { buildStampPicker(); $("#name-input").value = myName; showScreen("screen-name"); loadRoster(); }
 }
-if (token) gotoNameOrGame();
-else showScreen("screen-login");
+// Load server config (optional default stamp) before routing, so a new player's
+// stamp picker and first join already use it. Never block for more than ~2s.
+Promise.race([
+  fetch("/api/config").then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+  new Promise((res) => setTimeout(() => res({}), 2000)),
+]).then((cfg) => {
+  DEFAULT_STAMP_IMG = (cfg && cfg.defaultStampImg) || null;
+  if (_storedImg === null && DEFAULT_STAMP_IMG) myStampImg = DEFAULT_STAMP_IMG;
+  if (token) gotoNameOrGame();
+  else showScreen("screen-login");
+});
 
 // =====================================================================
 // Connection
@@ -228,6 +261,7 @@ function connect() {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.type === "state") {
       lastState = msg;
+      ADMINS = new Set(msg.adminNames || []);
       render(msg);
       if (msg.bingoBy) announceBingo(msg.bingoBy);
       if (msg.nudgeTarget === myKey() && msg.nudgeBy) announceNudge(msg);

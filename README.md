@@ -94,10 +94,15 @@ how to add a feature — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - **Password** — `SITE_PASSWORD`. Local: `.dev.vars`. Production: a Wrangler secret
   (`npx wrangler secret put SITE_PASSWORD`). A secret overrides any value in config.
-- **Admins** (who may remove other players, start games, undo winners) — the `ADMINS`
-  set, defined in **both** `src/bingo-room.js` (enforced server-side) and `public/app.js`
-  (controls the buttons). Ships as `["admin"]`; put your own names in, lower-cased, in
-  both places.
+- **Admins** (who may remove players, start/end games, set the season, undo winners) —
+  `ADMIN_NAMES`, a comma-separated list of player names (case-insensitive), e.g.
+  `alex,sam`. Local: `.dev.vars`. Production: `npx wrangler secret put ADMIN_NAMES`.
+  Enforced server-side; the list is sent to clients so they show the admin controls.
+  Unset → a single `admin` account.
+- **Default stamp image** (optional) — `DEFAULT_STAMP_IMG`, a same-origin path such as
+  `/stamps/marker.png` (or a `data:image/…` URL). New players start with it selected.
+  Unset → players start with a text stamp. Anything under `public/stamps/` is
+  git-ignored, so a private image can ship with `npm run deploy` without being committed.
 - **Approvals needed to declare a winner** — `APPROVALS_NEEDED` in `src/bingo-room.js`
   (default `2`).
 - **Default bingo items** — `DEFAULT_ITEMS` in `src/bingo-room.js` (also editable live

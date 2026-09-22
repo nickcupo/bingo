@@ -7,6 +7,10 @@ node_modules/
 # …but DO track the template
 !.dev.vars.example
 
+# Private instance assets — deployed with `wrangler deploy`, never committed.
+# (e.g. a custom default stamp image referenced by DEFAULT_STAMP_IMG)
+public/stamps/
+
 # Wrangler local state / build output
 .wrangler/
 dist/
