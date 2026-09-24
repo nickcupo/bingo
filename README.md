@@ -22,6 +22,10 @@ free plan.
 - Each player gets their own random 5×5 card (free center square) — or imports an
   existing card via **Enter my card**.
 - A shared item list **anyone can edit**; cards are generated from it.
+- **List review between games**: when a game ends — and again before players get a card
+  in the next one — everyone is shown 20 squares to keep or cut and can suggest new
+  ones. A square is dropped once two people cut it (and more cut than kept it), so a
+  stale list prunes itself without anyone scrolling through the whole thing.
 - **Identity is your name** — re-enter the same name on any device to get your card back.
 - Live **Players** panel with each player's progress, a mini-card, and live **win odds**
   (ranked by the [win rules](#how-winning-works): most Bingos, then most marked squares).

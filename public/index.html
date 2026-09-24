@@ -55,6 +55,24 @@
       </div>
     </section>
 
+    <!-- 2b. List review (between games, before you get your card) -->
+    <section id="screen-review" class="screen center" hidden>
+      <div class="box box-wide">
+        <h1 class="wordmark">Tidy up the list</h1>
+        <p class="lede" id="review-intro">Keep or cut these squares, and add anything new you've been hearing.</p>
+        <div id="review-list" class="review-list"></div>
+        <div class="field">
+          <span>Add new squares <span class="muted">(one per line, optional)</span></span>
+          <textarea id="review-add" rows="3" spellcheck="false" placeholder="e.g. &quot;Let's take that offline&quot;"></textarea>
+        </div>
+        <div class="review-actions">
+          <button id="review-save" class="btn">Save review</button>
+          <button id="review-skip" class="link">Skip for now</button>
+        </div>
+        <p class="hint" id="review-progress"></p>
+      </div>
+    </section>
+
     <!-- 3. Game -->
     <section id="screen-game" class="screen" hidden>
       <header class="topbar">

@@ -115,6 +115,28 @@ button { cursor: pointer; }
 .screen[hidden] { display: none !important; }
 
 .box { width: 100%; max-width: 380px; }
+.box-wide { max-width: 560px; }
+
+/* list review */
+.review-list {
+  max-height: 46vh; overflow-y: auto; margin: 0 0 1rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.review-row {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  padding: .55rem .75rem; border-top: 1px solid var(--line);
+}
+.review-row:first-child { border-top: none; }
+.review-item { min-width: 0; font-size: .9rem; line-height: 1.35; }
+.review-choice { display: flex; gap: .3rem; flex: none; }
+.review-btn {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: .2rem .6rem; font-size: .78rem; cursor: pointer;
+}
+.review-btn:hover { border-color: var(--ink); color: var(--ink); }
+.review-btn.on { border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 600; }
+.review-btn[data-choice="cut"].on { background: var(--danger); border-color: var(--danger); color: #fff; }
+.review-actions { display: flex; align-items: center; gap: 1rem; margin-top: .9rem; }
 .wordmark { font-family: var(--serif); font-size: 1.9rem; letter-spacing: -.01em; }
 .lede { color: var(--muted); margin: .4rem 0 1.4rem; }
 .stack { display: flex; flex-direction: column; gap: .9rem; }

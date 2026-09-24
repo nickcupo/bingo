@@ -406,7 +406,95 @@ function nudgeCount(state, key) {
   return Object.keys(raw).length;
 }
 
+// =====================================================================
+// List review — between games, everyone prunes a slice of the bingo list
+// =====================================================================
+let reviewChoices = {};      // item text -> "keep" | "cut"
+let reviewRenderedFor = "";  // signature of the batch currently on screen
+let reviewRequested = -1;    // round we've already asked the server for a batch
+
+function buildReviewRows(items) {
+  const box = $("#review-list");
+  box.innerHTML = "";
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "review-row";
+    const label = document.createElement("span");
+    label.className = "review-item";
+    label.textContent = item;
+    const group = document.createElement("div");
+    group.className = "review-choice";
+    for (const choice of ["keep", "cut"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.choice = choice;
+      b.className = "review-btn" + (reviewChoices[item] === choice ? " on" : "");
+      b.textContent = choice === "keep" ? "Keep" : "Cut";
+      b.addEventListener("click", () => {
+        reviewChoices[item] = choice;
+        for (const el of group.children) el.classList.toggle("on", el.dataset.choice === choice);
+      });
+      group.appendChild(b);
+    }
+    row.appendChild(label);
+    row.appendChild(group);
+    box.appendChild(row);
+  }
+}
+
+function renderReview(state) {
+  const r = state.review || {};
+  const mine = (r.assign && r.assign[myKey()]) || [];
+  // Ask the server for this round's batch once.
+  if (!mine.length && reviewRequested !== r.round) {
+    reviewRequested = r.round;
+    send({ type: "startReview" });
+  }
+  // Only rebuild when the batch actually changes, so toggles aren't clobbered
+  // by unrelated state updates.
+  const sig = r.round + "|" + mine.join("\u0001");
+  if (sig !== reviewRenderedFor) {
+    reviewRenderedFor = sig;
+    reviewChoices = {};
+    for (const item of mine) reviewChoices[item] = "keep";
+    buildReviewRows(mine);
+  }
+  const doneCount = Object.keys(r.done || {}).length;
+  const players = Object.keys(state.players || {}).length;
+  $("#review-intro").textContent = mine.length
+    ? `Keep or cut these ${mine.length} squares, and add anything new you've been hearing.`
+    : "Everything on the list has already been reviewed this round — add anything new, or skip.";
+  $("#review-progress").textContent =
+    `${doneCount} of ${players} reviewed · ${(state.items || []).length} squares in the list · ` +
+    `a square is dropped when ${2} people cut it.`;
+}
+
+$("#review-save").addEventListener("click", () => {
+  const add = $("#review-add").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  send({ type: "submitReview", votes: reviewChoices, add });
+  $("#review-add").value = "";
+  reviewRenderedFor = "";
+});
+$("#review-skip").addEventListener("click", () => {
+  send({ type: "skipReview" });
+  $("#review-add").value = "";
+  reviewRenderedFor = "";
+});
+
 function render(state) {
+  // Between games (and before a new card) each player prunes the list first.
+  const rv = state.review || {};
+  const needsReview = !!rv.open && !(rv.done || {})[myKey()];
+  const onEntryScreen = !$("#screen-login").hidden || !$("#screen-name").hidden;
+  if (!onEntryScreen) {
+    if (needsReview) {
+      if ($("#screen-review").hidden) showScreen("screen-review");
+      renderReview(state);
+      return;
+    }
+    if (!$("#screen-review").hidden) showScreen("screen-game");
+  }
+
   const active = state.gameActive !== false;
   $("#season-label").textContent = active ? seasonText(state.season) + " game" : "No game in progress";
   $("#no-game").hidden = active;

@@ -76,6 +76,35 @@ function parseAdmins(raw) {
 // Approvals required before a winner is officially declared.
 const APPROVALS_NEEDED = 2;
 
+// --- List review -------------------------------------------------------
+// After a game ends (and before players get a card in the next one) each player
+// is shown a slice of the bingo list to keep or cut, and can suggest new items.
+// How many items one person is asked about in a round.
+const REVIEW_BATCH = 20;
+// An item is dropped once this many people cut it, and more cut than kept it.
+const REVIEW_CUT_VOTES = 2;
+// Never let review shrink the list below a full card's worth of items.
+const MIN_ITEMS = 24;
+
+// A closed review round. Kept as one object so it persists/defaults in one go —
+// existing rooms load this and see no change until a round is opened.
+function emptyReview() {
+  return { open: false, round: 0, votes: {}, done: {}, assign: {} };
+}
+
+// Pick the items this player should review: ones they haven't voted on yet,
+// fewest votes first so coverage spreads across the group, random within ties.
+function pickReviewBatch(items, votes, playerKey) {
+  const pending = items.filter((item) => {
+    const v = votes[canonicalKey(item)];
+    return !v || !(playerKey in v);
+  });
+  const weight = (item) => Object.keys(votes[canonicalKey(item)] || {}).length;
+  return shuffle(pending)
+    .sort((a, b) => weight(a) - weight(b))
+    .slice(0, REVIEW_BATCH);
+}
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -261,6 +290,9 @@ export class BingoRoom {
       const storedActive = await this.ctx.storage.get("gameActive");
       this.gameActive = storedActive === undefined ? true : storedActive;
       if (storedActive === undefined) await this.ctx.storage.put("gameActive", this.gameActive);
+      // List review. Defaults to closed, so upgrading mid-game prompts nobody —
+      // a round only opens when a game is ended or a new one is started.
+      this.review = (await this.ctx.storage.get("review")) || emptyReview();
       // One-time fix: merge duplicate stat rows (quote / hyphen / spacing /
       // punctuation / case variants of the same call) into one canonical row.
       if (!(await this.ctx.storage.get("statsMergeV2"))) {
@@ -466,6 +498,8 @@ export class BingoRoom {
         await this.ctx.storage.put("contests", this.contests);
         await this.ctx.storage.put("nudges", this.nudges);
         await this.persistPlayers();
+        // New game — players review the list before they use their new card.
+        await this.openReview();
         return this.broadcast();
       }
 
@@ -475,6 +509,62 @@ export class BingoRoom {
         if (!this.admins.has(pid)) return;
         this.gameActive = false;
         await this.ctx.storage.put("gameActive", false);
+        // Game's over — ask everyone to prune the list for next time.
+        await this.openReview();
+        return this.broadcast();
+      }
+
+      // Ask for this player's slice of the list to review. Assigned once per
+      // round so a reload shows the same items.
+      case "startReview": {
+        if (!pid || !this.review.open || this.review.done[pid]) return;
+        if (!this.review.assign[pid]) {
+          this.review.assign[pid] = pickReviewBatch(this.items, this.review.votes, pid);
+          await this.persistReview();
+        }
+        return this.broadcast();
+      }
+
+      // Record a player's keep/cut votes plus any items they suggested.
+      case "submitReview": {
+        if (!pid || !this.review.open || this.review.done[pid]) return;
+        const assigned = new Set(this.review.assign[pid] || []);
+        const votes = msg.votes && typeof msg.votes === "object" ? msg.votes : {};
+        for (const [item, choice] of Object.entries(votes)) {
+          // Only accept votes on items this player was actually given.
+          if (!assigned.has(item)) continue;
+          if (choice !== "keep" && choice !== "cut") continue;
+          const key = canonicalKey(item);
+          if (!key) continue;
+          if (!this.review.votes[key]) this.review.votes[key] = {};
+          this.review.votes[key][pid] = choice;
+        }
+        // Suggested additions, de-duplicated against the existing list.
+        const seen = new Set(this.items.map((i) => canonicalKey(i)));
+        for (const raw of Array.isArray(msg.add) ? msg.add.slice(0, 20) : []) {
+          const text = String(raw || "").trim().slice(0, 120);
+          const key = canonicalKey(text);
+          if (!text || !key || STAT_SKIP.has(key) || seen.has(key)) continue;
+          seen.add(key);
+          this.items.push(text);
+        }
+        this.review.done[pid] = true;
+        delete this.review.assign[pid];
+        const trimmed = this.applyReviewCuts();
+        this.maybeCloseReview();
+        if (this.items.length > 200) this.items = this.items.slice(0, 200);
+        await this.ctx.storage.put("items", this.items);
+        await this.persistReview();
+        return this.broadcast(trimmed ? { listTrimmed: true } : null);
+      }
+
+      // Bow out of this round without voting (still counts as answered).
+      case "skipReview": {
+        if (!pid || !this.review.open || this.review.done[pid]) return;
+        this.review.done[pid] = true;
+        delete this.review.assign[pid];
+        this.maybeCloseReview();
+        await this.persistReview();
         return this.broadcast();
       }
 
@@ -619,6 +709,43 @@ export class BingoRoom {
     this.broadcast();
   }
 
+  // Open a fresh review round: everyone is asked again, old votes cleared.
+  async openReview() {
+    const round = (this.review?.round || 0) + 1;
+    this.review = { ...emptyReview(), open: true, round };
+    await this.ctx.storage.put("review", this.review);
+  }
+
+  async persistReview() {
+    await this.ctx.storage.put("review", this.review);
+  }
+
+  // Close the round once everyone currently in the game has had their say.
+  maybeCloseReview() {
+    const players = Object.keys(this.players);
+    if (players.length && players.every((k) => this.review.done[k])) {
+      this.review.open = false;
+      this.review.assign = {};
+    }
+  }
+
+  // Drop items the group voted to cut. Never shrinks the list below MIN_ITEMS,
+  // and never touches cards already dealt (those are snapshots).
+  applyReviewCuts() {
+    const cut = new Set();
+    for (const [key, voters] of Object.entries(this.review.votes)) {
+      const vals = Object.values(voters);
+      const cuts = vals.filter((v) => v === "cut").length;
+      const keeps = vals.length - cuts;
+      if (cuts >= REVIEW_CUT_VOTES && cuts > keeps) cut.add(key);
+    }
+    if (!cut.size) return false;
+    const kept = this.items.filter((item) => !cut.has(canonicalKey(item)));
+    if (kept.length < MIN_ITEMS || kept.length === this.items.length) return false;
+    this.items = kept;
+    return true;
+  }
+
   async persistPlayers() {
     await this.ctx.storage.put("players", this.players);
   }
@@ -688,6 +815,12 @@ export class BingoRoom {
       season: this.season,
       gameActive: this.gameActive,
       adminNames: [...this.admins],
+      review: {
+        open: this.review.open,
+        round: this.review.round,
+        done: this.review.done,
+        assign: this.review.assign,
+      },
       winners: this.winners,
       votes: this.votes,
       stats: this.stats,

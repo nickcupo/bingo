@@ -107,6 +107,9 @@ sender. Validation lives in the DO; invalid messages are ignored.
 | `resetItems` | — | Reset the list to `DEFAULT_ITEMS`. |
 | `removePlayer` | `{ playerId }` | Remove a player. Allowed only for self, or if the sender is an admin. |
 | `newGame` | `{ season: { term, year } }` | Set the season, deal fresh cards, clear marks + votes. |
+| `startReview` | — | Ask for this player's `REVIEW_BATCH` slice of the list (assigned once per round). |
+| `submitReview` | `{ votes: {item: "keep"\|"cut"}, add: string[] }` | Record votes on assigned items, append de-duplicated suggestions, apply cuts. |
+| `skipReview` | — | Bow out of the round without voting (still marks the player answered). |
 | `approveWinner` | `{ playerId }` | Approve a (bingo'd) candidate. `APPROVALS_NEEDED` distinct approvers declares them. |
 | `unapproveWinner` | `{ playerId }` | Withdraw the sender's approval. |
 | `clearWinner` | `{ season }` | Remove a declared winner; reopens voting for the current season. |
@@ -124,6 +127,8 @@ A single message type:
   season, gameActive,            // gameActive: false = "no game in progress"
   winners, votes,
   adminNames,                    // from ADMIN_NAMES; clients use it to show admin controls
+  review,                        // { open, round, done, assign } — list-review round
+
   stats, statLabels, statNames, contests, nudges,
   bingoBy?,                      // present once when a player just reached bingo (for the banner)
   winnerDeclared?,               // present once when approvals just declared a winner
